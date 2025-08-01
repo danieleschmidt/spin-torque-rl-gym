@@ -1,0 +1,128 @@
+# ── TERRAGON AUTONOMOUS SDLC VALUE CONFIGURATION ──
+# Perpetual Value Discovery for Spin-Torque RL-Gym
+
+repository:
+  name: "spin-torque-rl-gym"
+  type: "python-ml"
+  maturity: "nascent"  # 0-25% SDLC maturity
+  primary_language: "python"
+  framework: "gymnasium"
+  domain: "reinforcement-learning"
+
+scoring:
+  weights:
+    nascent:
+      wsjf: 0.4        # Cost of delay / job size
+      ice: 0.3         # Impact × confidence × ease
+      technicalDebt: 0.2
+      security: 0.1
+    developing:
+      wsjf: 0.5
+      ice: 0.2
+      technicalDebt: 0.2
+      security: 0.1
+    maturing:
+      wsjf: 0.6
+      ice: 0.1
+      technicalDebt: 0.2
+      security: 0.1
+    advanced:
+      wsjf: 0.5
+      ice: 0.1
+      technicalDebt: 0.3
+      security: 0.1
+
+  thresholds:
+    minScore: 10        # Minimum composite score for execution
+    maxRisk: 0.8        # Maximum risk tolerance
+    securityBoost: 2.0  # Security issue score multiplier
+    complianceBoost: 1.8
+    
+discovery:
+  sources:
+    - gitHistory        # TODO/FIXME comments, commit messages
+    - staticAnalysis    # Code quality, complexity
+    - issueTrackers     # GitHub issues, PRs
+    - vulnerabilityDatabases  # Security scans
+    - performanceMonitoring   # Performance regressions
+    - userFeedback      # Support tickets, reviews
+    
+  tools:
+    python:
+      staticAnalysis:
+        - "ruff"        # Linting and formatting
+        - "mypy"        # Type checking
+        - "bandit"      # Security analysis
+        - "safety"      # Dependency vulnerabilities
+      testing:
+        - "pytest"      # Testing framework
+        - "coverage"    # Coverage reporting
+      performance:
+        - "py-spy"      # Profiling
+        
+execution:
+  maxConcurrentTasks: 1
+  testRequirements:
+    minCoverage: 80
+    performanceRegression: 5  # % max regression
+    
+  rollbackTriggers:
+    - testFailure
+    - buildFailure
+    - securityViolation
+    
+  branchNaming: "auto-value/{item.id}-{item.slug}"
+  
+  prTemplate:
+    title: "[AUTO-VALUE] {item.title}"
+    labels: ["autonomous", "value-driven", "{item.category}"]
+    
+maturity_progression:
+  nascent_to_developing:
+    threshold: 25
+    requirements:
+      - "Basic project structure"
+      - "Core package setup"
+      - "Initial testing framework"
+      - "Basic CI/CD documentation"
+      
+  developing_to_maturing:
+    threshold: 50
+    requirements:
+      - "Comprehensive test suite"
+      - "Security scanning setup"
+      - "Performance benchmarks"
+      - "Advanced tooling configuration"
+      
+  maturing_to_advanced:
+    threshold: 75
+    requirements:
+      - "Full observability"
+      - "Advanced security posture"
+      - "Performance optimization"
+      - "Governance frameworks"
+
+value_metrics:
+  track:
+    - executionHistory
+    - backlogSize
+    - completionVelocity
+    - valueDelivered
+    - technicalDebtReduction
+    - securityPostureImprovement
+    - performanceGains
+    
+  report_frequency:
+    immediate: "on_pr_merge"
+    hourly: "security_scan"
+    daily: "comprehensive_analysis"
+    weekly: "deep_sdlc_review"
+    monthly: "strategic_recalibration"
+    
+automation:
+  schedules:
+    continuous_discovery: "*/30 * * * *"  # Every 30 minutes
+    security_scan: "0 */1 * * *"          # Hourly
+    comprehensive_analysis: "0 2 * * *"    # Daily at 2 AM
+    deep_review: "0 3 * * 1"              # Weekly Monday 3 AM
+    strategic_review: "0 4 1 * *"         # Monthly 1st at 4 AM
