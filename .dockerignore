@@ -1,0 +1,139 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Documentation build
+docs/_build/
+docs/_static/
+docs/_templates/
+
+# Project specific
+data/
+results/
+models/
+logs/
+experiments/
+checkpoints/
+wandb/
+mlruns/
+tensorboard_logs/
+cache/
+tmp/
+temp/
+.benchmarks/
+profiles/
+visualizations/
+outputs/
+
+# Configuration files with secrets
+config/secrets.yaml
+config/production.yaml
+.secrets
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Simulation data
+*.h5
+*.hdf5
+*.npy
+*.npz
+*.pickle
+*.pkl
+
+# Large files
+*.tar.gz
+*.zip
+*.rar
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+.travis.yml
+.circleci/
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# Backup files
+*.bak
+*.backup
+*.orig
+
+# Node.js (if any)
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# Editor directories and files
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

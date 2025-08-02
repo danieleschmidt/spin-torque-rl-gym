@@ -205,3 +205,46 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Project specific for Spin-Torque RL-Gym
+data/
+results/
+models/
+logs/
+experiments/
+checkpoints/
+wandb/
+mlruns/
+tensorboard_logs/
+cache/
+tmp/
+temp/
+.benchmarks/
+profiles/
+visualizations/
+outputs/
+
+# Configuration files with secrets
+config/secrets.yaml
+config/production.yaml
+.secrets
+*.key
+*.pem
+*.p12
+*.pfx
+
+# Simulation data
+*.h5
+*.hdf5
+*.npy
+*.npz
+*.pickle
+*.pkl
+
+# JAX compilation cache
+jax_cache/
+
+# Physics simulation temporary files
+*.vtk
+*.vtu
+*.pvd

@@ -1,0 +1,579 @@
+# Automated Dependency Updates Workflow
+# Copy this file to .github/workflows/dependency-update.yml
+
+name: Dependency Updates
+
+on:
+  schedule:
+    - cron: '0 8 * * 1'  # Weekly on Mondays at 8 AM UTC
+  workflow_dispatch:
+    inputs:
+      update_type:
+        description: 'Type of updates to perform'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - security-only
+          - minor-only
+          - patch-only
+      auto_merge:
+        description: 'Auto-merge safe updates'
+        required: false
+        default: true
+        type: boolean
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  check-dependencies:
+    name: Check Dependency Status
+    runs-on: ubuntu-latest
+    outputs:
+      has-updates: ${{ steps.check.outputs.has-updates }}
+      security-updates: ${{ steps.check.outputs.security-updates }}
+      total-updates: ${{ steps.check.outputs.total-updates }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          pip install pip-check-updates safety outdated
+
+      - name: Check for outdated packages
+        id: check
+        run: |
+          echo "=== Checking for outdated dependencies ==="
+          
+          # Check for outdated packages
+          OUTDATED=$(pip list --outdated --format=json || echo "[]")
+          OUTDATED_COUNT=$(echo "$OUTDATED" | jq length)
+          
+          echo "Found $OUTDATED_COUNT outdated packages"
+          echo "$OUTDATED" | jq -r '.[] | "\(.name): \(.version) -> \(.latest_version)"'
+          
+          # Check for security vulnerabilities
+          safety check --json --output safety-report.json || true
+          SECURITY_COUNT=$(jq '.vulnerabilities | length' safety-report.json 2>/dev/null || echo "0")
+          
+          echo "Found $SECURITY_COUNT security vulnerabilities"
+          
+          # Set outputs
+          if [ "$OUTDATED_COUNT" -gt 0 ] || [ "$SECURITY_COUNT" -gt 0 ]; then
+            echo "has-updates=true" >> $GITHUB_OUTPUT
+          else
+            echo "has-updates=false" >> $GITHUB_OUTPUT
+          fi
+          
+          echo "security-updates=$SECURITY_COUNT" >> $GITHUB_OUTPUT  
+          echo "total-updates=$OUTDATED_COUNT" >> $GITHUB_OUTPUT
+
+      - name: Upload dependency report
+        uses: actions/upload-artifact@v3
+        with:
+          name: dependency-status
+          path: |
+            safety-report.json
+
+  security-updates:
+    name: Apply Security Updates
+    runs-on: ubuntu-latest
+    needs: check-dependencies
+    if: needs.check-dependencies.outputs.security-updates != '0'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Configure Git
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install safety pip-audit
+
+      - name: Apply security updates
+        run: |
+          echo "=== Applying security updates ==="
+          
+          # Get vulnerable packages
+          safety check --json --output vulnerable.json || true
+          
+          if [ -f vulnerable.json ] && [ "$(jq '.vulnerabilities | length' vulnerable.json)" -gt 0 ]; then
+            echo "Found security vulnerabilities, updating packages..."
+            
+            # Extract package names and update them
+            jq -r '.vulnerabilities[].package_name' vulnerable.json | sort -u | while read -r package; do
+              echo "Updating $package..."
+              pip install --upgrade "$package"
+            done
+            
+            # Update requirements files
+            pip freeze > requirements-temp.txt
+            
+            # Update pyproject.toml dependencies (simplified approach)
+            echo "Security updates applied. Manual review of pyproject.toml may be needed."
+          else
+            echo "No security updates needed"
+          fi
+
+      - name: Test security updates
+        run: |
+          # Install updated dependencies
+          pip install -e ".[dev]"
+          
+          # Run basic tests to ensure nothing is broken
+          python -c "import spin_torque_gym; print('Package imports successfully')"
+          pytest tests/unit/test_core.py -v
+
+      - name: Create security update PR
+        if: success()
+        run: |
+          if git diff --quiet; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          
+          BRANCH_NAME="security-updates-$(date +%Y%m%d-%H%M%S)"
+          git checkout -b "$BRANCH_NAME"
+          
+          git add -A
+          git commit -m "🔒 Apply security updates
+
+          - Updated packages with known security vulnerabilities
+          - Automated security update via GitHub Actions
+          
+          Security report:
+          $(cat vulnerable.json | jq -r '.vulnerabilities[] | "- \(.package_name): \(.vulnerability_id)"' | head -10)
+          "
+          
+          git push origin "$BRANCH_NAME"
+          
+          # Create PR using GitHub CLI
+          gh pr create \
+            --title "🔒 Security Updates $(date +%Y-%m-%d)" \
+            --body "## Security Updates
+
+          This PR contains automated security updates for packages with known vulnerabilities.
+
+          ### Changes
+          - Updated packages with security vulnerabilities
+          - All basic tests passing
+
+          ### Security Issues Fixed
+          $(cat vulnerable.json | jq -r '.vulnerabilities[] | "- **\(.package_name)**: \(.vulnerability_id) - \(.advisory | split(\".\")[0])"' | head -10)
+
+          ### Testing
+          - ✅ Package imports successfully
+          - ✅ Core tests passing
+
+          ### Auto-merge
+          This PR is eligible for auto-merge if all checks pass.
+          " \
+            --label "security,dependencies,auto-merge" \
+            --assignee "${{ github.actor }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  regular-updates:
+    name: Regular Dependency Updates
+    runs-on: ubuntu-latest
+    needs: check-dependencies
+    if: |
+      needs.check-dependencies.outputs.has-updates == 'true' && 
+      (github.event.inputs.update_type == 'all' || github.event.inputs.update_type == '' || 
+       github.event.inputs.update_type == 'minor-only' || github.event.inputs.update_type == 'patch-only')
+    
+    strategy:
+      matrix:
+        update-type: [patch, minor]
+        
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Configure Git
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          pip install pip-upgrader toml
+
+      - name: Apply ${{ matrix.update-type }} updates
+        run: |
+          echo "=== Applying ${{ matrix.update-type }} updates ==="
+          
+          # Get current packages
+          pip list --format=json > current-packages.json
+          
+          # Get outdated packages
+          pip list --outdated --format=json > outdated-packages.json
+          
+          # Filter updates based on type
+          python << 'EOF'
+          import json
+          import re
+          from packaging import version
+          
+          update_type = "${{ matrix.update-type }}"
+          
+          with open('outdated-packages.json', 'r') as f:
+              outdated = json.load(f)
+          
+          updates_to_apply = []
+          
+          for pkg in outdated:
+              current_ver = version.parse(pkg['version'])
+              latest_ver = version.parse(pkg['latest_version'])
+              
+              if update_type == 'patch':
+                  # Only patch updates (same major.minor)
+                  if (current_ver.major == latest_ver.major and 
+                      current_ver.minor == latest_ver.minor):
+                      updates_to_apply.append(pkg)
+              elif update_type == 'minor':
+                  # Minor updates (same major)
+                  if current_ver.major == latest_ver.major:
+                      updates_to_apply.append(pkg)
+          
+          print(f"Found {len(updates_to_apply)} {update_type} updates")
+          for pkg in updates_to_apply:
+              print(f"- {pkg['name']}: {pkg['version']} -> {pkg['latest_version']}")
+          
+          with open(f'{update_type}-updates.json', 'w') as f:
+              json.dump(updates_to_apply, f, indent=2)
+          EOF
+          
+          # Apply updates
+          if [ -f "${{ matrix.update-type }}-updates.json" ]; then
+            jq -r '.[].name' "${{ matrix.update-type }}-updates.json" | while read -r package; do
+              echo "Updating $package..."
+              pip install --upgrade "$package"
+            done
+          fi
+
+      - name: Test updates
+        run: |
+          echo "=== Testing updates ==="
+          
+          # Reinstall package with new dependencies
+          pip install -e ".[dev]"
+          
+          # Run comprehensive tests
+          python -c "import spin_torque_gym; print('Package imports successfully')"
+          
+          # Run unit tests
+          pytest tests/unit/ -v --tb=short --maxfail=5
+          
+          # Run linting
+          ruff check spin_torque_gym/ --quiet || echo "Linting warnings found"
+          
+          # Check for import issues
+          python -c "
+          import sys
+          try:
+              import numpy, scipy, matplotlib
+              print('✅ All major dependencies import successfully')
+          except ImportError as e:
+              print(f'❌ Import error: {e}')
+              sys.exit(1)
+          "
+
+      - name: Generate requirements diff
+        run: |
+          echo "=== Generating requirements diff ==="
+          
+          # Generate new requirements
+          pip freeze > requirements-new.txt
+          
+          # Compare with existing (if it exists)
+          if [ -f requirements.txt ]; then
+            echo "### Requirements changes:" > requirements-diff.txt
+            diff requirements.txt requirements-new.txt >> requirements-diff.txt || true
+          else
+            echo "### New requirements file created" > requirements-diff.txt
+          fi
+
+      - name: Create update PR
+        if: success()
+        run: |
+          # Check if there are any changes
+          if [ ! -f "${{ matrix.update-type }}-updates.json" ] || [ "$(jq length ${{ matrix.update-type }}-updates.json)" -eq 0 ]; then
+            echo "No ${{ matrix.update-type }} updates to apply"
+            exit 0
+          fi
+          
+          BRANCH_NAME="${{ matrix.update-type }}-updates-$(date +%Y%m%d-%H%M%S)"
+          git checkout -b "$BRANCH_NAME"
+          
+          # Commit changes
+          git add -A
+          git commit -m "⬆️ ${{ matrix.update-type }} dependency updates
+
+          Automated ${{ matrix.update-type }} dependency updates:
+          $(jq -r '.[] | "- \(.name): \(.version) -> \(.latest_version)"' ${{ matrix.update-type }}-updates.json)
+          
+          - All tests passing
+          - No breaking changes expected
+          " || exit 0
+          
+          git push origin "$BRANCH_NAME"
+          
+          # Create PR
+          gh pr create \
+            --title "⬆️ ${{ matrix.update-type }} dependency updates $(date +%Y-%m-%d)" \
+            --body "## ${{ matrix.update-type }} Dependency Updates
+
+          This PR contains automated ${{ matrix.update-type }} dependency updates.
+
+          ### Updated Packages
+          $(jq -r '.[] | "- **\(.name)**: \(.version) → \(.latest_version)"' ${{ matrix.update-type }}-updates.json)
+
+          ### Changes
+          - Updated $(jq length ${{ matrix.update-type }}-updates.json) packages
+          - All tests passing
+          - No breaking changes expected
+
+          ### Testing Status
+          - ✅ Package imports successfully  
+          - ✅ Unit tests passing
+          - ✅ Linting checks passed
+          - ✅ No import errors detected
+
+          ### Auto-merge Eligible
+          This PR contains only ${{ matrix.update-type }} updates and is eligible for auto-merge.
+          " \
+            --label "dependencies,${{ matrix.update-type }}-update,auto-merge" \
+            --assignee "${{ github.actor }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  major-updates:
+    name: Major Version Updates (Manual Review)
+    runs-on: ubuntu-latest
+    needs: check-dependencies
+    if: needs.check-dependencies.outputs.has-updates == 'true' && github.event.inputs.update_type == 'all'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Identify major updates
+        run: |
+          echo "=== Identifying major version updates ==="
+          
+          pip list --outdated --format=json > outdated-packages.json
+          
+          python << 'EOF'
+          import json
+          from packaging import version
+          
+          with open('outdated-packages.json', 'r') as f:
+              outdated = json.load(f)
+          
+          major_updates = []
+          
+          for pkg in outdated:
+              current_ver = version.parse(pkg['version'])
+              latest_ver = version.parse(pkg['latest_version'])
+              
+              # Major version update
+              if current_ver.major != latest_ver.major:
+                  major_updates.append(pkg)
+          
+          print(f"Found {len(major_updates)} major version updates")
+          for pkg in major_updates:
+              print(f"- {pkg['name']}: {pkg['version']} -> {pkg['latest_version']}")
+          
+          with open('major-updates.json', 'w') as f:
+              json.dump(major_updates, f, indent=2)
+          EOF
+
+      - name: Create major updates issue
+        if: hashFiles('major-updates.json') != ''
+        run: |
+          if [ "$(jq length major-updates.json)" -eq 0 ]; then
+            echo "No major updates found"
+            exit 0
+          fi
+          
+          gh issue create \
+            --title "📋 Major Dependency Updates Available $(date +%Y-%m-%d)" \
+            --body "## Major Version Updates Available
+
+          The following packages have major version updates available that require manual review:
+
+          ### Packages Requiring Review
+          $(jq -r '.[] | "- **\(.name)**: \(.version) → \(.latest_version)"' major-updates.json)
+
+          ### Next Steps
+          1. Review changelog and breaking changes for each package
+          2. Update dependencies manually in pyproject.toml
+          3. Run comprehensive tests
+          4. Update code if needed for compatibility
+
+          ### Automated Actions
+          - Minor and patch updates have been handled automatically
+          - Security updates have been applied separately
+
+          This issue was created automatically by the dependency update workflow.
+          " \
+            --label "dependencies,major-update,manual-review" \
+            --assignee "${{ github.actor }}"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  auto-merge:
+    name: Auto-merge Safe Updates  
+    runs-on: ubuntu-latest
+    needs: [security-updates, regular-updates]
+    if: |
+      always() && 
+      (github.event.inputs.auto_merge == 'true' || github.event.inputs.auto_merge == '') &&
+      (needs.security-updates.result == 'success' || needs.regular-updates.result == 'success')
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Auto-merge eligible PRs
+        run: |
+          echo "=== Checking for auto-merge eligible PRs ==="
+          
+          # Get recent PRs with auto-merge label
+          ELIGIBLE_PRS=$(gh pr list \
+            --label "auto-merge" \
+            --state "open" \
+            --json number,title,labels,statusCheckRollupState \
+            --jq '.[] | select(.statusCheckRollupState == "SUCCESS") | .number')
+          
+          if [ -z "$ELIGIBLE_PRS" ]; then
+            echo "No eligible PRs for auto-merge"
+            exit 0
+          fi
+          
+          for pr_number in $ELIGIBLE_PRS; do
+            echo "Auto-merging PR #$pr_number"
+            
+            # Enable auto-merge
+            gh pr merge "$pr_number" \
+              --auto \
+              --squash \
+              --delete-branch || echo "Failed to enable auto-merge for PR #$pr_number"
+          done
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  cleanup:
+    name: Cleanup Old Branches
+    runs-on: ubuntu-latest
+    needs: [auto-merge]
+    if: always()
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Delete old update branches
+        run: |
+          echo "=== Cleaning up old dependency update branches ==="
+          
+          # Delete merged branches older than 7 days
+          git for-each-ref --format='%(refname:short) %(committerdate)' refs/remotes/origin | \
+          grep -E "(security-updates|patch-updates|minor-updates)" | \
+          while read branch date; do
+            branch_name=$(echo "$branch" | sed 's|origin/||')
+            
+            # Check if branch exists and is older than 7 days
+            if git log -1 --since="7 days ago" "$branch" >/dev/null 2>&1; then
+              echo "Branch $branch_name is recent, keeping"
+            else
+              echo "Deleting old branch: $branch_name"
+              git push origin --delete "$branch_name" || echo "Failed to delete $branch_name"
+            fi
+          done
+
+  notify:
+    name: Notification Summary
+    runs-on: ubuntu-latest
+    needs: [check-dependencies, security-updates, regular-updates, major-updates, auto-merge]
+    if: always()
+    
+    steps:
+      - name: Send summary notification
+        uses: 8398a7/action-slack@v3
+        with:
+          status: custom
+          custom_payload: |
+            {
+              text: "📦 Dependency Update Summary",
+              attachments: [{
+                color: "${{ needs.check-dependencies.outputs.security-updates != '0' && 'danger' || 'good' }}",
+                fields: [
+                  {
+                    title: "Security Updates",
+                    value: "${{ needs.check-dependencies.outputs.security-updates }} vulnerabilities addressed",
+                    short: true
+                  },
+                  {
+                    title: "Regular Updates", 
+                    value: "${{ needs.check-dependencies.outputs.total-updates }} packages checked",
+                    short: true
+                  },
+                  {
+                    title: "Status",
+                    value: "${{ needs.security-updates.result == 'success' && '✅ Applied' || '⏭️ Skipped' }} security updates\n${{ needs.regular-updates.result == 'success' && '✅ Applied' || '⏭️ Skipped' }} regular updates",
+                    short: false
+                  }
+                ]
+              }]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}

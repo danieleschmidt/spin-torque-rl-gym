@@ -1,0 +1,274 @@
+version: '3.8'
+
+# Docker Compose configuration for Spin-Torque RL-Gym
+# Supports development, testing, and production deployments
+
+services:
+  #============================================================================
+  # Main Application Service
+  #============================================================================
+  app:
+    build:
+      context: .
+      target: production
+      args:
+        BUILD_DATE: ${BUILD_DATE:-}
+        VCS_REF: ${VCS_REF:-}
+        VERSION: ${VERSION:-0.1.0}
+    image: spin-torque-rl-gym:${VERSION:-latest}
+    container_name: spin-torque-rl-gym
+    restart: unless-stopped
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - DEBUG=${DEBUG:-false}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - RANDOM_SEED=${RANDOM_SEED:-42}
+      - ENABLE_VISUALIZATION=${ENABLE_VISUALIZATION:-false}
+      - NUM_CORES=${NUM_CORES:-0}
+      - GPU_DEVICE_ID=${GPU_DEVICE_ID:--1}
+    volumes:
+      - ./data:/app/data
+      - ./results:/app/results
+      - ./models:/app/models
+      - ./logs:/app/logs
+    ports:
+      - "8080:8080"
+    networks:
+      - spin-torque-network
+    profiles:
+      - production
+
+  #============================================================================
+  # Development Service
+  #============================================================================
+  dev:
+    build:
+      context: .
+      target: development
+      args:
+        BUILD_DATE: ${BUILD_DATE:-}
+        VCS_REF: ${VCS_REF:-}
+        VERSION: ${VERSION:-0.1.0}
+    image: spin-torque-rl-gym:dev
+    container_name: spin-torque-rl-gym-dev
+    environment:
+      - ENVIRONMENT=development
+      - DEBUG=true
+      - LOG_LEVEL=DEBUG
+      - ENABLE_VISUALIZATION=true
+      - JUPYTER_ENABLE_LAB=yes
+      - JUPYTER_TOKEN=${JUPYTER_TOKEN:-spin-torque-dev}
+    volumes:
+      - .:/app
+      - ./data:/app/data
+      - ./results:/app/results
+      - ./models:/app/models
+      - ./logs:/app/logs
+      - dev-jupyter:/home/appuser/.jupyter
+    ports:
+      - "8888:8888"  # Jupyter Lab
+      - "8080:8080"  # Application
+      - "8000:8000"  # Development server
+    networks:
+      - spin-torque-network
+    profiles:
+      - development
+    command: >
+      bash -c "
+        jupyter lab --ip=0.0.0.0 --port=8888 --no-browser --allow-root
+        --ServerApp.token='${JUPYTER_TOKEN:-spin-torque-dev}'
+        --ServerApp.password=''
+        --ServerApp.allow_origin='*'
+        --ServerApp.allow_remote_access=True
+      "
+
+  #============================================================================
+  # Testing Service
+  #============================================================================
+  test:
+    build:
+      context: .
+      target: testing
+      args:
+        BUILD_DATE: ${BUILD_DATE:-}
+        VCS_REF: ${VCS_REF:-}
+        VERSION: ${VERSION:-0.1.0}
+    image: spin-torque-rl-gym:test
+    container_name: spin-torque-rl-gym-test
+    environment:
+      - ENVIRONMENT=testing
+      - DEBUG=false
+      - LOG_LEVEL=WARNING
+      - TESTING=true
+      - ENABLE_VISUALIZATION=false
+    volumes:
+      - .:/app
+      - test-cache:/app/.pytest_cache
+    networks:
+      - spin-torque-network
+    profiles:
+      - testing
+    command: >
+      python -m pytest tests/ -v 
+      --tb=short 
+      --cov=spin_torque_gym 
+      --cov-report=term-missing 
+      --cov-report=html:/app/htmlcov
+
+  #============================================================================
+  # Database Service (for experiment tracking)
+  #============================================================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: spin-torque-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-spin_torque_db}
+      - POSTGRES_USER=${POSTGRES_USER:-spin_torque_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-spin_torque_pass}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./docker/init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    networks:
+      - spin-torque-network
+    profiles:
+      - database
+      - full
+
+  #============================================================================
+  # Redis Service (for caching and job queues)
+  #============================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: spin-torque-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-spin_torque_redis}
+    volumes:
+      - redis-data:/data
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    networks:
+      - spin-torque-network
+    profiles:
+      - cache
+      - full
+
+  #============================================================================
+  # MLflow Tracking Server
+  #============================================================================
+  mlflow:
+    image: python:3.11-slim
+    container_name: spin-torque-mlflow
+    restart: unless-stopped
+    environment:
+      - MLFLOW_BACKEND_STORE_URI=postgresql://${POSTGRES_USER:-spin_torque_user}:${POSTGRES_PASSWORD:-spin_torque_pass}@postgres:5432/${POSTGRES_DB:-spin_torque_db}
+      - MLFLOW_DEFAULT_ARTIFACT_ROOT=/mlflow/artifacts
+    volumes:
+      - mlflow-artifacts:/mlflow/artifacts
+    ports:
+      - "${MLFLOW_PORT:-5000}:5000"
+    networks:
+      - spin-torque-network
+    depends_on:
+      - postgres
+    profiles:
+      - mlflow
+      - full
+    command: >
+      bash -c "
+        pip install mlflow psycopg2-binary &&
+        mlflow server 
+        --backend-store-uri postgresql://${POSTGRES_USER:-spin_torque_user}:${POSTGRES_PASSWORD:-spin_torque_pass}@postgres:5432/${POSTGRES_DB:-spin_torque_db}
+        --default-artifact-root /mlflow/artifacts
+        --host 0.0.0.0
+        --port 5000
+      "
+
+  #============================================================================
+  # Monitoring with Grafana
+  #============================================================================
+  grafana:
+    image: grafana/grafana:latest
+    container_name: spin-torque-grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./docker/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./docker/grafana/datasources:/etc/grafana/provisioning/datasources
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    networks:
+      - spin-torque-network
+    profiles:
+      - monitoring
+      - full
+
+  #============================================================================
+  # GPU-Accelerated Service (for JAX/CUDA workloads)
+  #============================================================================
+  gpu:
+    build:
+      context: .
+      target: production
+      args:
+        BUILD_DATE: ${BUILD_DATE:-}
+        VCS_REF: ${VCS_REF:-}
+        VERSION: ${VERSION:-0.1.0}
+    image: spin-torque-rl-gym:gpu
+    container_name: spin-torque-rl-gym-gpu
+    restart: unless-stopped
+    environment:
+      - ENVIRONMENT=${ENVIRONMENT:-production}
+      - DEBUG=${DEBUG:-false}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - ENABLE_JAX=true
+      - JAX_PLATFORM=gpu
+      - GPU_DEVICE_ID=0
+    volumes:
+      - ./data:/app/data
+      - ./results:/app/results
+      - ./models:/app/models
+      - ./logs:/app/logs
+    networks:
+      - spin-torque-network
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    profiles:
+      - gpu
+
+#==============================================================================
+# Networks
+#==============================================================================
+networks:
+  spin-torque-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+#==============================================================================
+# Volumes
+#==============================================================================
+volumes:
+  postgres-data:
+    driver: local
+  redis-data:
+    driver: local
+  mlflow-artifacts:
+    driver: local
+  grafana-data:
+    driver: local
+  dev-jupyter:
+    driver: local
+  test-cache:
+    driver: local

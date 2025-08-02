@@ -1,0 +1,80 @@
+# CODEOWNERS File
+# 
+# This file defines code ownership and review requirements for the Spin-Torque RL-Gym repository.
+# See https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Global code owners - require review for all changes
+* @danieleschmidt @maintainer
+
+# GitHub configuration and workflows
+/.github/ @danieleschmidt @devops-team
+/.github/workflows/ @danieleschmidt @devops-team @security-team
+/.github/dependabot.yml @danieleschmidt @devops-team
+
+# CI/CD and automation
+/scripts/ @danieleschmidt @devops-team
+Makefile @danieleschmidt @devops-team
+
+# Docker and containerization
+/docker/ @danieleschmidt @devops-team @security-team
+Dockerfile @danieleschmidt @devops-team @security-team
+docker-compose*.yml @danieleschmidt @devops-team
+
+# Core Python package
+/spin_torque_gym/ @danieleschmidt @core-developers
+/spin_torque_gym/core/ @danieleschmidt @core-developers
+/spin_torque_gym/envs/ @danieleschmidt @core-developers @physics-team
+
+# Testing infrastructure
+/tests/ @danieleschmidt @qa-team @core-developers
+/tests/unit/ @core-developers @qa-team
+/tests/integration/ @danieleschmidt @core-developers @qa-team
+/tests/benchmarks/ @performance-team @core-developers
+
+# Documentation
+/docs/ @danieleschmidt @technical-writers
+README.md @danieleschmidt @technical-writers
+CONTRIBUTING.md @danieleschmidt @community-team
+SECURITY.md @danieleschmidt @security-team
+
+# Configuration files
+pyproject.toml @danieleschmidt @core-developers
+requirements*.txt @danieleschmidt @core-developers
+.pre-commit-config.yaml @danieleschmidt @devops-team
+
+# Development environment
+/.devcontainer/ @danieleschmidt @devops-team
+/.vscode/ @danieleschmidt @devops-team
+.env.example @danieleschmidt @devops-team
+
+# Monitoring and observability
+/docs/monitoring/ @danieleschmidt @devops-team @sre-team
+/monitoring/ @danieleschmidt @devops-team @sre-team
+
+# Security-related files
+SECURITY.md @danieleschmidt @security-team
+/.github/workflows/security-scan.yml @danieleschmidt @security-team @devops-team
+
+# Legal and compliance
+LICENSE @danieleschmidt @legal-team
+COPYRIGHT @danieleschmidt @legal-team
+
+# Metrics and automation
+/.github/project-metrics.json @danieleschmidt @devops-team @product-managers
+/scripts/collect-metrics.py @danieleschmidt @devops-team @data-team
+/scripts/automation-helpers.py @danieleschmidt @devops-team
+
+# Database and data
+/docker/postgres/ @danieleschmidt @database-team @devops-team
+**/migrations/ @danieleschmidt @database-team
+
+# Research and experimental features
+/experiments/ @danieleschmidt @research-team @physics-team
+/notebooks/ @danieleschmidt @research-team @data-scientists
+
+# Third-party integrations
+/integrations/ @danieleschmidt @core-developers @integration-team
+
+# Release and deployment
+CHANGELOG.md @danieleschmidt @release-team
+VERSION @danieleschmidt @release-team

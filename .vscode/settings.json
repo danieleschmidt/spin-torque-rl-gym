@@ -1,0 +1,78 @@
+{
+    "python.defaultInterpreterPath": "./venv/bin/python",
+    "python.formatting.provider": "black",
+    "python.formatting.blackArgs": ["--line-length=88"],
+    "python.linting.enabled": true,
+    "python.linting.pylintEnabled": false,
+    "python.linting.flake8Enabled": false,
+    "python.linting.mypyEnabled": true,
+    "python.linting.banditEnabled": true,
+    "python.testing.pytestEnabled": true,
+    "python.testing.pytestArgs": [
+        "tests",
+        "-v",
+        "--tb=short"
+    ],
+    "python.testing.unittestEnabled": false,
+    "python.testing.autoTestDiscoverOnSaveEnabled": true,
+    "editor.formatOnSave": true,
+    "editor.formatOnPaste": false,
+    "editor.rulers": [88],
+    "editor.codeActionsOnSave": {
+        "source.organizeImports": "explicit"
+    },
+    "files.associations": {
+        "*.yaml": "yaml",
+        "*.yml": "yaml"
+    },
+    "files.exclude": {
+        "**/__pycache__": true,
+        "**/*.pyc": true,
+        "**/.pytest_cache": true,
+        "**/.mypy_cache": true,
+        "**/.coverage": true,
+        "**/htmlcov": true,
+        "**/.ruff_cache": true,
+        "**/build": true,
+        "**/dist": true,
+        "**/*.egg-info": true
+    },
+    "search.exclude": {
+        "**/node_modules": true,
+        "**/bower_components": true,
+        "**/*.code-search": true,
+        "**/__pycache__": true,
+        "**/.pytest_cache": true,
+        "**/.mypy_cache": true,
+        "**/.ruff_cache": true,
+        "**/build": true,
+        "**/dist": true,
+        "**/*.egg-info": true,
+        "**/data": true,
+        "**/results": true,
+        "**/models": true,
+        "**/logs": true,
+        "**/experiments": true,
+        "**/checkpoints": true,
+        "**/wandb": true,
+        "**/mlruns": true
+    },
+    "jupyter.notebookFileRoot": "${workspaceFolder}",
+    "yaml.schemas": {
+        "https://json.schemastore.org/github-workflow.json": ".github/workflows/*.yml",
+        "https://json.schemastore.org/github-action.json": ".github/actions/*/action.yml",
+        "https://json.schemastore.org/dependabot-v2.json": ".github/dependabot.yml"
+    },
+    "ruff.args": ["--config=pyproject.toml"],
+    "mypy-type-checker.args": ["--config-file=pyproject.toml"],
+    "isort.args": ["--settings-path=pyproject.toml"],
+    "black-formatter.args": ["--config=pyproject.toml"],
+    "json.schemas": [
+        {
+            "fileMatch": [
+                "package.json"
+            ],
+            "url": "https://json.schemastore.org/package.json"
+        }
+    ]
+}

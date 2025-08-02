@@ -1,0 +1,560 @@
+# Continuous Integration Workflow
+# Copy this file to .github/workflows/ci.yml
+
+name: Continuous Integration
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+      - 'LICENSE'
+  push:
+    branches: [ main, develop ]
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+      - 'LICENSE'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  PYTHONUNBUFFERED: 1
+  PYTHONDONTWRITEBYTECODE: 1
+  PIP_NO_CACHE_DIR: 1
+  PIP_DISABLE_PIP_VERSION_CHECK: 1
+
+jobs:
+  detect-changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      python-code: ${{ steps.changes.outputs.python-code }}
+      docker: ${{ steps.changes.outputs.docker }}
+      tests: ${{ steps.changes.outputs.tests }}
+      docs: ${{ steps.changes.outputs.docs }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Detect changes
+        uses: dorny/paths-filter@v2
+        id: changes
+        with:
+          filters: |
+            python-code:
+              - 'spin_torque_gym/**'
+              - 'pyproject.toml'
+              - 'requirements*.txt'
+            docker:
+              - 'Dockerfile'
+              - 'docker-compose*.yml'
+              - 'docker/**'
+            tests:
+              - 'tests/**'
+              - 'pyproject.toml'
+            docs:
+              - 'docs/**'
+              - '*.md'
+
+  test:
+    name: Test Suite
+    runs-on: ${{ matrix.os }}
+    needs: detect-changes
+    if: needs.detect-changes.outputs.python-code == 'true' || needs.detect-changes.outputs.tests == 'true'
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ['3.8', '3.9', '3.10', '3.11']
+        include:
+          - os: ubuntu-latest
+            python-version: '3.11'
+            coverage: true
+            benchmark: true
+        exclude:
+          # Reduce matrix size for draft PRs
+          - os: ${{ github.event.pull_request.draft && 'macos-latest' || '' }}
+          - os: ${{ github.event.pull_request.draft && 'windows-latest' || '' }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+          cache-dependency-path: |
+            pyproject.toml
+            requirements*.txt
+
+      - name: Install system dependencies (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libopenblas-dev liblapack-dev gfortran
+
+      - name: Install system dependencies (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          brew install openblas lapack
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -e ".[dev,jax,viz]"
+
+      - name: Verify installation
+        run: |
+          python -c "import spin_torque_gym; print('Package imported successfully')"
+          python -c "import numpy, scipy, matplotlib; print('Dependencies available')"
+
+      - name: Run unit tests
+        run: |
+          pytest tests/unit/ -v --tb=short --maxfail=10 \
+            --junitxml=junit/test-results-${{ matrix.os }}-${{ matrix.python-version }}.xml
+
+      - name: Run integration tests
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          pytest tests/integration/ -v --tb=short --maxfail=5 \
+            --junitxml=junit/integration-results-${{ matrix.os }}-${{ matrix.python-version }}.xml
+
+      - name: Run coverage analysis
+        if: matrix.coverage
+        run: |
+          pytest tests/ --cov=spin_torque_gym --cov-report=xml --cov-report=term-missing \
+            --cov-fail-under=80 --cov-config=pyproject.toml
+
+      - name: Run benchmarks
+        if: matrix.benchmark
+        run: |
+          pytest tests/benchmarks/ -v --benchmark-only --benchmark-json=benchmark.json
+        continue-on-error: true
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: test-results-${{ matrix.os }}-${{ matrix.python-version }}
+          path: |
+            junit/test-results-*.xml
+            junit/integration-results-*.xml
+
+      - name: Upload coverage reports
+        if: matrix.coverage
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.xml
+          flags: unittests
+          name: codecov-umbrella
+          fail_ci_if_error: true
+
+      - name: Upload benchmark results
+        if: matrix.benchmark
+        uses: actions/upload-artifact@v3
+        with:
+          name: benchmark-results
+          path: benchmark.json
+
+  lint:
+    name: Code Quality
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.python-code == 'true'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Check code formatting with black
+        run: |
+          black --check --diff spin_torque_gym/ tests/
+
+      - name: Check import sorting with isort
+        run: |
+          isort --check-only --diff spin_torque_gym/ tests/
+
+      - name: Lint with ruff
+        run: |
+          ruff check spin_torque_gym/ tests/ --output-format=github
+
+      - name: Type check with mypy
+        run: |
+          mypy spin_torque_gym/
+
+      - name: Check docstring coverage
+        run: |
+          interrogate spin_torque_gym/ --fail-under=80 --ignore-init-method --ignore-module
+        continue-on-error: true
+
+      - name: Check for common security issues
+        run: |
+          bandit -r spin_torque_gym/ -f json -o bandit-report.json
+          bandit -r spin_torque_gym/ -f txt
+        continue-on-error: true
+
+      - name: Upload security report
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: security-report
+          path: bandit-report.json
+
+  dependency-check:
+    name: Dependency Security
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.python-code == 'true'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Check for known security vulnerabilities
+        run: |
+          safety check --json --output safety-report.json
+          safety check
+        continue-on-error: true
+
+      - name: Check for license compatibility
+        run: |
+          pip-licenses --format=json --output-file=licenses.json
+          pip-licenses --format=plain-vertical
+        continue-on-error: true
+
+      - name: Upload dependency reports
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: dependency-reports
+          path: |
+            safety-report.json
+            licenses.json
+
+  build:
+    name: Build Package
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.python-code == 'true'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip build twine
+
+      - name: Build package
+        run: |
+          python -m build
+
+      - name: Check package
+        run: |
+          twine check dist/*
+
+      - name: Test package installation
+        run: |
+          pip install dist/*.whl
+          python -c "import spin_torque_gym; print(f'Version: {spin_torque_gym.__version__}')"
+
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: python-package
+          path: dist/
+
+  docker-build:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.docker == 'true' || needs.detect-changes.outputs.python-code == 'true'
+    
+    strategy:
+      matrix:
+        target: [production, development, testing]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch,suffix=-${{ matrix.target }}
+            type=ref,event=pr,suffix=-${{ matrix.target }}
+            type=sha,prefix={{branch}}-,suffix=-${{ matrix.target }}
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          target: ${{ matrix.target }}
+          platforms: linux/amd64,linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.target }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.target }}
+          build-args: |
+            BUILD_DATE=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
+            VCS_REF=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.revision'] }}
+            VERSION=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.version'] }}
+
+      - name: Test Docker image
+        run: |
+          docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}-${{ matrix.target }} \
+            python -c "import spin_torque_gym; print('Docker image working')"
+
+  docs:
+    name: Documentation
+    runs-on: ubuntu-latest
+    needs: detect-changes
+    if: needs.detect-changes.outputs.docs == 'true' || needs.detect-changes.outputs.python-code == 'true'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          pip install sphinx sphinx-rtd-theme myst-parser
+
+      - name: Check documentation links
+        run: |
+          find docs/ -name "*.md" -exec markdown-link-check {} \;
+        continue-on-error: true
+
+      - name: Build documentation
+        run: |
+          # Add sphinx build commands when docs are set up
+          echo "Documentation build placeholder"
+
+      - name: Check for broken internal links
+        run: |
+          # Add link checking commands
+          echo "Link checking placeholder"
+
+  e2e-tests:
+    name: End-to-End Tests
+    runs-on: ubuntu-latest
+    needs: [test, lint, build]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: spin_torque_test
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_pass
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Run end-to-end tests
+        env:
+          POSTGRES_URL: postgresql://test_user:test_pass@localhost:5432/spin_torque_test
+          REDIS_URL: redis://localhost:6379
+          ENVIRONMENT: testing
+        run: |
+          pytest tests/e2e/ -v --tb=short
+
+  performance-regression:
+    name: Performance Regression Tests
+    runs-on: ubuntu-latest
+    needs: [test]
+    if: github.event_name == 'pull_request'
+    
+    steps:
+      - name: Checkout code (base)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+
+      - name: Checkout code (head)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          path: head
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Run baseline benchmarks
+        run: |
+          cd base
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          pytest tests/benchmarks/ --benchmark-only --benchmark-json=../baseline.json
+
+      - name: Run current benchmarks
+        run: |
+          cd head
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+          pytest tests/benchmarks/ --benchmark-only --benchmark-json=../current.json
+
+      - name: Compare performance
+        run: |
+          python -c "
+          import json
+          
+          with open('baseline.json') as f:
+              baseline = json.load(f)
+          with open('current.json') as f:
+              current = json.load(f)
+          
+          print('Performance comparison results will be implemented')
+          "
+
+  all-checks:
+    name: All Checks Complete
+    runs-on: ubuntu-latest
+    needs: [test, lint, dependency-check, build, docker-build, docs]
+    if: always()
+    
+    steps:
+      - name: Check all job results
+        run: |
+          if [[ "${{ needs.test.result }}" == "failure" || 
+                "${{ needs.lint.result }}" == "failure" || 
+                "${{ needs.dependency-check.result }}" == "failure" || 
+                "${{ needs.build.result }}" == "failure" || 
+                "${{ needs.docker-build.result }}" == "failure" ]]; then
+            echo "One or more required checks failed"
+            exit 1
+          fi
+          echo "All required checks passed!"
+
+      - name: Update commit status
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: context.payload.pull_request.head.sha,
+              state: 'success',
+              target_url: `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+              description: 'All CI checks passed',
+              context: 'continuous-integration'
+            });
+
+  notify:
+    name: Notify Results
+    runs-on: ubuntu-latest
+    needs: [all-checks]
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Notify success
+        if: needs.all-checks.result == 'success'
+        uses: 8398a7/action-slack@v3
+        with:
+          status: success
+          text: '✅ CI pipeline succeeded for main branch'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+
+      - name: Notify failure
+        if: needs.all-checks.result == 'failure'
+        uses: 8398a7/action-slack@v3
+        with:
+          status: failure
+          text: '❌ CI pipeline failed for main branch'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
