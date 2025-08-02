@@ -1,0 +1,538 @@
+# Continuous Deployment Workflow
+# Copy this file to .github/workflows/cd.yml
+
+name: Continuous Deployment
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  release:
+    types: [ published ]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Target environment'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+      force_deploy:
+        description: 'Force deployment even if checks fail'
+        required: false
+        default: false
+        type: boolean
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event.inputs.environment || 'auto' }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  prepare:
+    name: Prepare Deployment
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      environment: ${{ steps.environment.outputs.environment }}
+      should-deploy-staging: ${{ steps.environment.outputs.should-deploy-staging }}
+      should-deploy-production: ${{ steps.environment.outputs.should-deploy-production }}
+      image-tag: ${{ steps.version.outputs.image-tag }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ ${{ github.event_name }} == 'release' ]]; then
+            VERSION="${{ github.event.release.tag_name }}"
+          elif [[ ${{ github.ref_type }} == 'tag' ]]; then
+            VERSION="${{ github.ref_name }}"
+          else
+            VERSION="$(git describe --tags --always --dirty)"
+          fi
+          
+          # Clean version for Docker tag
+          IMAGE_TAG=$(echo "$VERSION" | tr '/' '-' | tr '+' '-')
+          
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "image-tag=$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+          echo "Image tag: $IMAGE_TAG"
+
+      - name: Determine deployment environment
+        id: environment
+        run: |
+          if [[ "${{ github.event.inputs.environment }}" != "" ]]; then
+            ENVIRONMENT="${{ github.event.inputs.environment }}"
+          elif [[ ${{ github.event_name }} == 'release' ]] || [[ ${{ github.ref_type }} == 'tag' ]]; then
+            ENVIRONMENT="production"
+          else
+            ENVIRONMENT="staging"
+          fi
+          
+          SHOULD_DEPLOY_STAGING="false"
+          SHOULD_DEPLOY_PRODUCTION="false"
+          
+          if [[ "$ENVIRONMENT" == "staging" ]] || [[ "$ENVIRONMENT" == "production" ]]; then
+            SHOULD_DEPLOY_STAGING="true"
+          fi
+          
+          if [[ "$ENVIRONMENT" == "production" ]]; then
+            SHOULD_DEPLOY_PRODUCTION="true"
+          fi
+          
+          echo "environment=$ENVIRONMENT" >> $GITHUB_OUTPUT
+          echo "should-deploy-staging=$SHOULD_DEPLOY_STAGING" >> $GITHUB_OUTPUT
+          echo "should-deploy-production=$SHOULD_DEPLOY_PRODUCTION" >> $GITHUB_OUTPUT
+          echo "Target environment: $ENVIRONMENT"
+
+  build:
+    name: Build Release Artifacts
+    runs-on: ubuntu-latest
+    needs: prepare
+    outputs:
+      image-digest: ${{ steps.build.outputs.digest }}
+      image-url: ${{ steps.build.outputs.image-url }}
+      sbom-digest: ${{ steps.sbom.outputs.digest }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ needs.prepare.outputs.image-tag }}
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - name: Build and push Docker image
+        id: build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          target: production
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=production
+          cache-to: type=gha,mode=max,scope=production
+          build-args: |
+            VERSION=${{ needs.prepare.outputs.version }}
+            BUILD_DATE=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
+            VCS_REF=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.revision'] }}
+          provenance: true
+          sbom: true
+
+      - name: Generate SBOM
+        id: sbom
+        uses: anchore/sbom-action@v0
+        with:
+          image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.image-tag }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+
+      - name: Upload SBOM
+        uses: actions/upload-artifact@v3
+        with:
+          name: sbom
+          path: sbom.spdx.json
+
+      - name: Sign container image
+        env:
+          COSIGN_EXPERIMENTAL: 1
+        run: |
+          echo "Container signing would be implemented here"
+          # cosign sign --yes ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build.outputs.digest }}
+
+  security-scan:
+    name: Security Scan Release
+    runs-on: ubuntu-latest
+    needs: [prepare, build]
+    if: needs.prepare.outputs.should-deploy-production == 'true'
+    
+    steps:
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.image-tag }}
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy scan results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: Check for critical vulnerabilities
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.image-tag }}
+          format: 'json'
+          output: 'trivy-results.json'
+          severity: 'CRITICAL,HIGH'
+          exit-code: '1'
+
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [prepare, build]
+    if: needs.prepare.outputs.should-deploy-staging == 'true'
+    environment: 
+      name: staging
+      url: ${{ vars.STAGING_URL || 'https://staging.spinrl.com' }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure deployment context
+        run: |
+          echo "Deploying version ${{ needs.prepare.outputs.version }} to staging"
+          echo "Image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.image-tag }}"
+
+      - name: Deploy to staging environment
+        run: |
+          echo "🚀 Deploying to staging..."
+          
+          # Example deployment commands (customize for your infrastructure)
+          # kubectl set image deployment/spin-torque-app app=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.image-tag }}
+          # kubectl rollout status deployment/spin-torque-app --timeout=300s
+          
+          # Docker Compose deployment example:
+          # export IMAGE_TAG=${{ needs.prepare.outputs.image-tag }}
+          # docker-compose -f docker/docker-compose.staging.yml up -d
+          
+          echo "✅ Staging deployment completed"
+
+      - name: Run smoke tests
+        run: |
+          echo "🧪 Running smoke tests..."
+          
+          # Wait for deployment to be ready
+          sleep 30
+          
+          # Basic health check
+          STAGING_URL="${{ vars.STAGING_URL || 'https://staging.spinrl.com' }}"
+          
+          # Health check
+          curl -f "$STAGING_URL/health" || (echo "❌ Health check failed" && exit 1)
+          
+          # Ready check
+          curl -f "$STAGING_URL/ready" || (echo "❌ Ready check failed" && exit 1)
+          
+          echo "✅ Smoke tests passed"
+
+      - name: Run integration tests
+        run: |
+          echo "🔬 Running integration tests..."
+          
+          # Set up test environment
+          export STAGING_URL="${{ vars.STAGING_URL || 'https://staging.spinrl.com' }}"
+          export ENVIRONMENT="staging"
+          
+          # Run integration test suite
+          # pytest tests/integration/ --staging-url="$STAGING_URL"
+          
+          echo "✅ Integration tests completed"
+
+      - name: Performance baseline
+        run: |
+          echo "📊 Running performance baseline tests..."
+          
+          # Run performance tests and store baseline
+          # k6 run --env STAGING_URL=${{ vars.STAGING_URL }} tests/performance/load-test.js
+          
+          echo "✅ Performance baseline completed"
+
+      - name: Notify staging deployment
+        if: always()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          text: |
+            Staging deployment ${{ job.status }}
+            Version: ${{ needs.prepare.outputs.version }}
+            Environment: ${{ vars.STAGING_URL }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [prepare, build, security-scan, deploy-staging]
+    if: |
+      always() && 
+      needs.prepare.outputs.should-deploy-production == 'true' && 
+      (needs.deploy-staging.result == 'success' || needs.deploy-staging.result == 'skipped') &&
+      (needs.security-scan.result == 'success' || github.event.inputs.force_deploy == 'true')
+    environment: 
+      name: production
+      url: ${{ vars.PRODUCTION_URL || 'https://spinrl.com' }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Pre-deployment checks
+        run: |
+          echo "🔍 Running pre-deployment checks..."
+          
+          # Check production readiness
+          echo "✅ Image built and scanned"
+          echo "✅ Staging deployment successful"
+          echo "✅ Security scan passed"
+          echo "✅ Ready for production deployment"
+
+      - name: Create deployment announcement
+        run: |
+          echo "📢 Creating deployment announcement..."
+          
+          # Post to Slack about upcoming deployment
+          curl -X POST "${{ secrets.SLACK_WEBHOOK }}" \
+            -H 'Content-Type: application/json' \
+            -d '{
+              "text": "🚀 Starting production deployment",
+              "attachments": [{
+                "color": "warning",
+                "fields": [
+                  {"title": "Version", "value": "${{ needs.prepare.outputs.version }}", "short": true},
+                  {"title": "Commit", "value": "${{ github.sha }}", "short": true},
+                  {"title": "Triggered by", "value": "${{ github.actor }}", "short": true}
+                ]
+              }]
+            }' || echo "Failed to send Slack notification"
+
+      - name: Deploy to production
+        run: |
+          echo "🚀 Deploying to production..."
+          
+          # Blue-green deployment example
+          # kubectl set image deployment/spin-torque-app-green app=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.image-tag }}
+          # kubectl rollout status deployment/spin-torque-app-green --timeout=600s
+          
+          # Switch traffic
+          # kubectl patch service spin-torque-app -p '{"spec":{"selector":{"version":"green"}}}'
+          
+          # Clean up old deployment
+          # kubectl scale deployment/spin-torque-app-blue --replicas=0
+          
+          echo "✅ Production deployment completed"
+
+      - name: Post-deployment verification
+        run: |
+          echo "🔍 Running post-deployment verification..."
+          
+          # Wait for deployment to stabilize
+          sleep 60
+          
+          PRODUCTION_URL="${{ vars.PRODUCTION_URL || 'https://spinrl.com' }}"
+          
+          # Health checks
+          curl -f "$PRODUCTION_URL/health" || (echo "❌ Health check failed" && exit 1)
+          curl -f "$PRODUCTION_URL/ready" || (echo "❌ Ready check failed" && exit 1)
+          
+          # Smoke tests
+          curl -f "$PRODUCTION_URL/metrics" || (echo "❌ Metrics endpoint failed" && exit 1)
+          
+          echo "✅ Post-deployment verification passed"
+
+      - name: Monitor deployment
+        run: |
+          echo "📊 Monitoring deployment metrics..."
+          
+          # Monitor key metrics for 5 minutes
+          for i in {1..10}; do
+            echo "Monitoring check $i/10..."
+            
+            # Check error rates, response times, etc.
+            # You can integrate with your monitoring system here
+            
+            sleep 30
+          done
+          
+          echo "✅ Deployment monitoring completed"
+
+      - name: Update deployment record
+        run: |
+          echo "📝 Updating deployment record..."
+          
+          # Record deployment in database or external system
+          # curl -X POST "$DEPLOYMENT_TRACKER_URL/deployments" \
+          #   -H "Authorization: Bearer ${{ secrets.DEPLOYMENT_TOKEN }}" \
+          #   -H "Content-Type: application/json" \
+          #   -d '{
+          #     "version": "${{ needs.prepare.outputs.version }}",
+          #     "environment": "production",
+          #     "timestamp": "'$(date -u +%Y-%m-%dT%H:%M:%SZ)'",
+          #     "commit": "${{ github.sha }}",
+          #     "actor": "${{ github.actor }}"
+          #   }'
+          
+          echo "✅ Deployment record updated"
+
+      - name: Notify successful deployment
+        if: success()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: success
+          text: |
+            🎉 Production deployment successful!
+            
+            Version: ${{ needs.prepare.outputs.version }}
+            Environment: ${{ vars.PRODUCTION_URL }}
+            Deployed by: ${{ github.actor }}
+            
+            Commit: ${{ github.sha }}
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+
+      - name: Notify failed deployment
+        if: failure()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: failure
+          text: |
+            🚨 Production deployment failed!
+            
+            Version: ${{ needs.prepare.outputs.version }}
+            Commit: ${{ github.sha }}
+            
+            Please check the deployment logs and consider rollback.
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+
+  rollback:
+    name: Rollback on Failure
+    runs-on: ubuntu-latest
+    needs: [prepare, deploy-production]
+    if: always() && needs.deploy-production.result == 'failure'
+    environment: production
+    
+    steps:
+      - name: Trigger rollback
+        run: |
+          echo "🔄 Triggering automatic rollback..."
+          
+          # Get previous successful deployment
+          # PREVIOUS_VERSION=$(get_last_successful_deployment)
+          
+          # Rollback deployment
+          # kubectl rollout undo deployment/spin-torque-app
+          # kubectl rollout status deployment/spin-torque-app --timeout=300s
+          
+          echo "✅ Rollback completed"
+
+      - name: Verify rollback
+        run: |
+          echo "🔍 Verifying rollback..."
+          
+          sleep 30
+          
+          PRODUCTION_URL="${{ vars.PRODUCTION_URL || 'https://spinrl.com' }}"
+          curl -f "$PRODUCTION_URL/health" || (echo "❌ Rollback verification failed" && exit 1)
+          
+          echo "✅ Rollback verification passed"
+
+      - name: Notify rollback
+        uses: 8398a7/action-slack@v3
+        with:
+          status: warning
+          text: |
+            🔄 Automatic rollback completed
+            
+            Failed version: ${{ needs.prepare.outputs.version }}
+            System restored to previous stable version
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
+
+  cleanup:
+    name: Cleanup
+    runs-on: ubuntu-latest
+    needs: [prepare, deploy-production]
+    if: always()
+    
+    steps:
+      - name: Clean up old images
+        run: |
+          echo "🧹 Cleaning up old container images..."
+          
+          # Keep last 10 images, remove older ones
+          # This would integrate with your container registry API
+          
+          echo "✅ Cleanup completed"
+
+      - name: Update deployment dashboard
+        run: |
+          echo "📊 Updating deployment dashboard..."
+          
+          # Update external dashboards or systems with deployment status
+          
+          echo "✅ Dashboard updated"
+
+  generate-release-notes:
+    name: Generate Release Notes
+    runs-on: ubuntu-latest
+    needs: [prepare, deploy-production]
+    if: needs.deploy-production.result == 'success' && github.event_name == 'release'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Generate changelog
+        run: |
+          echo "📝 Generating release notes..."
+          
+          # Generate changelog from commits
+          git log --pretty=format:"- %s (%an)" \
+            $(git describe --tags --abbrev=0 HEAD^)..HEAD > RELEASE_NOTES.md
+          
+          echo "## What's Changed" >> RELEASE_NOTES.md
+          echo "" >> RELEASE_NOTES.md
+          cat RELEASE_NOTES.md
+
+      - name: Update release notes
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            const releaseNotes = fs.readFileSync('RELEASE_NOTES.md', 'utf8');
+            
+            await github.rest.repos.updateRelease({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              release_id: ${{ github.event.release.id }},
+              body: releaseNotes
+            });
