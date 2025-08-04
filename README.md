@@ -28,7 +28,7 @@ pip install spin-torque-rl-gym[viz]
 pip install spin-torque-rl-gym[jax]
 
 # Development installation
-git clone https://github.com/yourusername/spin-torque-rl-gym
+git clone https://github.com/danieleschmidt/spin-torque-rl-gym
 cd spin-torque-rl-gym
 pip install -e ".[dev]"
 ```
@@ -715,9 +715,9 @@ diag.visualize_action_effects(
 ```bibtex
 @software{spin_torque_rl_gym,
   title={Spin-Torque RL-Gym: Reinforcement Learning for Spintronic Device Control},
-  author={Your Name},
+  author={Daniel Schmidt},
   year={2025},
-  url={https://github.com/yourusername/spin-torque-rl-gym}
+  url={https://github.com/danieleschmidt/spin-torque-rl-gym}
 }
 ```
 
@@ -738,6 +738,6 @@ This project is licensed under the MIT License - see [LICENSE](LICENSE) for deta
 ## Resources
 
 - [Documentation](https://spin-torque-rl-gym.readthedocs.io)
-- [Tutorials](https://github.com/yourusername/spin-torque-rl-gym/tutorials)
+- [Tutorials](https://github.com/danieleschmidt/spin-torque-rl-gym/tutorials)
 - [Device Database](https://spin-torque-rl-gym.github.io/devices)
 - [Benchmark Results](https://spin-torque-rl-gym.github.io/benchmarks)
