@@ -9,6 +9,9 @@ import warnings
 
 from .base_device import BaseSpintronicDevice
 from .stt_mram import STTMRAMDevice
+from .sot_mram import SOTMRAMDevice
+from .vcma_mram import VCMAMRAMDevice
+from .skyrmion_device import SkyrmionDevice
 
 
 class DeviceFactory:
@@ -22,10 +25,10 @@ class DeviceFactory:
     def _register_default_devices(self) -> None:
         """Register default device types."""
         self.register_device('stt_mram', STTMRAMDevice)
-        # Note: Other device types will be registered when their classes are implemented
-        # self.register_device('sot_mram', SOTMRAMDevice)
-        # self.register_device('vcma_mram', VCMAMRAMDevice)
-        # self.register_device('skyrmion', SkyrmionDevice)
+        self.register_device('sot_mram', SOTMRAMDevice)
+        self.register_device('vcma_mram', VCMAMRAMDevice)
+        self.register_device('skyrmion', SkyrmionDevice)
+        self.register_device('skyrmion_track', SkyrmionDevice)  # Alias for skyrmion environments
     
     def register_device(self, device_type: str, device_class: Type[BaseSpintronicDevice]) -> None:
         """Register a new device type.
