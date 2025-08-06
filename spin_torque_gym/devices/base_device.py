@@ -19,25 +19,119 @@ class BaseSpintronicDevice(ABC):
             device_params: Dictionary containing device parameters
         """
         self.device_params = device_params.copy()
-        self._validate_parameters()
+        
+        # Extract common parameters with defaults
+        self.volume = device_params.get('volume', 1e-24)
+        self.thickness = device_params.get('thickness', 1e-9)
+        self.saturation_magnetization = device_params.get('saturation_magnetization', 800e3)
         
         # Common physical constants
-        self.mu_0 = 4 * np.pi * 1e-7  # Permeability of free space (H/m)
-        self.k_b = 1.380649e-23  # Boltzmann constant (J/K)
-        self.gamma = 2.21e5  # Gyromagnetic ratio (m/A·s)
+        self.mu0 = 4 * np.pi * 1e-7  # Permeability of free space (H/m)
+        self.kb = 1.380649e-23  # Boltzmann constant (J/K)
+        self.e = 1.602176634e-19  # Elementary charge (C)
+        self.hbar = 1.054571817e-34  # Reduced Planck constant (J⋅s)
         
-    @abstractmethod
+        self._validate_parameters()
+        
     def _validate_parameters(self) -> None:
         """Validate that required parameters are present and valid."""
-        pass
+        required_params = ['volume', 'saturation_magnetization']
+        for param in required_params:
+            if param not in self.device_params:
+                raise ValueError(f"Missing required parameter: {param}")
     
     @abstractmethod
     def compute_effective_field(
         self,
         magnetization: np.ndarray,
-        applied_field: np.ndarray,
-        temperature: float = 300.0
+        applied_field: np.ndarray
     ) -> np.ndarray:
         """Compute total effective magnetic field.
         
-        Args:\n            magnetization: Current magnetization vector (unit vector)\n            applied_field: External applied field (T)\n            temperature: Temperature in Kelvin\n            \n        Returns:\n            Total effective field vector (T)\n        \"\"\"\n        pass\n    \n    @abstractmethod\n    def compute_spin_torque(\n        self,\n        magnetization: np.ndarray,\n        current: float,\n        voltage: float = 0.0\n    ) -> Tuple[np.ndarray, np.ndarray]:\n        \"\"\"Compute spin torque terms.\n        \n        Args:\n            magnetization: Current magnetization vector (unit vector)\n            current: Applied current density (A/m²)\n            voltage: Applied voltage (V)\n            \n        Returns:\n            Tuple of (spin_transfer_torque, field_like_torque)\n        \"\"\"\n        pass\n    \n    @abstractmethod\n    def compute_energy(\n        self,\n        magnetization: np.ndarray,\n        applied_field: np.ndarray,\n        temperature: float = 300.0\n    ) -> float:\n        \"\"\"Compute total magnetic energy.\n        \n        Args:\n            magnetization: Magnetization vector (unit vector)\n            applied_field: External field (T)\n            temperature: Temperature in Kelvin\n            \n        Returns:\n            Total energy (J)\n        \"\"\"\n        pass\n    \n    @abstractmethod\n    def compute_resistance(\n        self,\n        magnetization: np.ndarray,\n        reference_magnetization: Optional[np.ndarray] = None\n    ) -> float:\n        \"\"\"Compute device resistance.\n        \n        Args:\n            magnetization: Current magnetization state\n            reference_magnetization: Reference layer magnetization\n            \n        Returns:\n            Resistance (Ω)\n        \"\"\"\n        pass\n    \n    def get_parameter(self, key: str, default: Any = None) -> Any:\n        \"\"\"Get device parameter value.\n        \n        Args:\n            key: Parameter key\n            default: Default value if key not found\n            \n        Returns:\n            Parameter value\n        \"\"\"\n        return self.device_params.get(key, default)\n    \n    def set_parameter(self, key: str, value: Any) -> None:\n        \"\"\"Set device parameter value.\n        \n        Args:\n            key: Parameter key\n            value: Parameter value\n        \"\"\"\n        self.device_params[key] = value\n    \n    def get_geometry_info(self) -> Dict[str, float]:\n        \"\"\"Get device geometry information.\n        \n        Returns:\n            Dictionary with geometry parameters\n        \"\"\"\n        return {\n            'volume': self.get_parameter('volume', 1e-24),\n            'area': self.get_parameter('area', 1e-14),\n            'thickness': self.get_parameter('thickness', 1e-9),\n            'aspect_ratio': self.get_parameter('aspect_ratio', 1.0)\n        }\n    \n    def get_material_info(self) -> Dict[str, float]:\n        \"\"\"Get material properties.\n        \n        Returns:\n            Dictionary with material parameters\n        \"\"\"\n        return {\n            'saturation_magnetization': self.get_parameter('saturation_magnetization', 800e3),\n            'gilbert_damping': self.get_parameter('damping', 0.01),\n            'exchange_constant': self.get_parameter('exchange_constant', 20e-12),\n            'uniaxial_anisotropy': self.get_parameter('uniaxial_anisotropy', 1e6),\n            'spin_polarization': self.get_parameter('polarization', 0.7)\n        }\n    \n    def compute_thermal_stability(\n        self,\n        temperature: float = 300.0\n    ) -> Dict[str, float]:\n        \"\"\"Compute thermal stability metrics.\n        \n        Args:\n            temperature: Temperature in Kelvin\n            \n        Returns:\n            Dictionary with thermal stability information\n        \"\"\"\n        k_u = self.get_parameter('uniaxial_anisotropy', 1e6)\n        volume = self.get_parameter('volume', 1e-24)\n        \n        energy_barrier = k_u * volume\n        thermal_stability_factor = energy_barrier / (self.k_b * temperature) if temperature > 0 else float('inf')\n        \n        return {\n            'energy_barrier_J': energy_barrier,\n            'thermal_stability_factor': thermal_stability_factor,\n            'is_stable': thermal_stability_factor > 40,  # Common criterion\n            'temperature_K': temperature\n        }\n    \n    def compute_switching_metrics(\n        self,\n        current: float,\n        pulse_duration: float = 1e-9\n    ) -> Dict[str, float]:\n        \"\"\"Compute switching-related metrics.\n        \n        Args:\n            current: Current density (A/m²)\n            pulse_duration: Pulse duration (s)\n            \n        Returns:\n            Dictionary with switching metrics\n        \"\"\"\n        volume = self.get_parameter('volume', 1e-24)\n        ms = self.get_parameter('saturation_magnetization', 800e3)\n        polarization = self.get_parameter('polarization', 0.7)\n        \n        # Switching current density (simplified Slonczewski model)\n        k_u = self.get_parameter('uniaxial_anisotropy', 1e6)\n        demag_factor = self.get_parameter('demag_factors', np.array([0, 0, 1]))[2]\n        \n        h_k = 2 * k_u / (self.mu_0 * ms)  # Anisotropy field\n        h_demag = ms * demag_factor  # Demagnetization field\n        h_eff = h_k + h_demag  # Effective switching field\n        \n        # Critical current for switching\n        j_c = (2 * ms * volume * h_eff) / (polarization * self.gamma)\n        \n        # Energy consumed\n        resistance = self.get_parameter('resistance_parallel', 1e3)\n        voltage = current * resistance * self.get_parameter('area', 1e-14)\n        energy_consumed = voltage**2 / resistance * pulse_duration\n        \n        return {\n            'critical_current_density': j_c,\n            'switching_efficiency': abs(current) / j_c if j_c > 0 else 0,\n            'energy_consumed_J': energy_consumed,\n            'power_dissipated_W': voltage**2 / resistance if resistance > 0 else 0\n        }\n    \n    def get_device_info(self) -> Dict[str, Any]:\n        \"\"\"Get comprehensive device information.\n        \n        Returns:\n            Dictionary with all device information\n        \"\"\"\n        info = {\n            'device_type': self.__class__.__name__,\n            'parameters': self.device_params.copy()\n        }\n        \n        info.update(self.get_geometry_info())\n        info.update(self.get_material_info())\n        \n        return info\n    \n    def validate_magnetization(self, magnetization: np.ndarray) -> np.ndarray:\n        \"\"\"Validate and normalize magnetization vector.\n        \n        Args:\n            magnetization: Input magnetization vector\n            \n        Returns:\n            Normalized unit magnetization vector\n            \n        Raises:\n            ValueError: If input is invalid\n        \"\"\"\n        if not isinstance(magnetization, np.ndarray):\n            magnetization = np.array(magnetization)\n        \n        if magnetization.shape != (3,):\n            raise ValueError(f\"Magnetization must be 3D vector, got shape {magnetization.shape}\")\n        \n        magnitude = np.linalg.norm(magnetization)\n        if magnitude < 1e-12:\n            raise ValueError(\"Magnetization vector cannot be zero\")\n        \n        return magnetization / magnitude\n    \n    def compute_demagnetization_factors(\n        self,\n        shape: str = \"ellipsoid\",\n        aspect_ratio: float = 1.0\n    ) -> np.ndarray:\n        \"\"\"Compute demagnetization factors for given geometry.\n        \n        Args:\n            shape: Geometry shape ('ellipsoid', 'cylinder', 'thin_film')\n            aspect_ratio: Aspect ratio (length/width for ellipsoid)\n            \n        Returns:\n            Demagnetization factors [Nx, Ny, Nz]\n        \"\"\"\n        if shape == \"thin_film\":\n            # Infinite thin film\n            return np.array([0, 0, 1])\n        elif shape == \"cylinder\":\n            # Infinite cylinder along z\n            return np.array([0.5, 0.5, 0])\n        elif shape == \"ellipsoid\":\n            # Prolate ellipsoid with aspect ratio a/b = a/c\n            if aspect_ratio == 1.0:\n                # Sphere\n                return np.array([1/3, 1/3, 1/3])\n            elif aspect_ratio > 1.0:\n                # Prolate (elongated along z)\n                e = np.sqrt(1 - 1/aspect_ratio**2)\n                nz = (1 - e**2) / e**2 * (-1 + np.arctanh(e) / e)\n                nx = ny = (1 - nz) / 2\n                return np.array([nx, ny, nz])\n            else:\n                # Oblate (flattened along z)\n                e = np.sqrt(1 - aspect_ratio**2)\n                nz = (1 / e**2) * (1 - (1 - e**2)**0.5 * np.arcsin(e) / e)\n                nx = ny = (1 - nz) / 2\n                return np.array([nx, ny, nz])\n        else:\n            raise ValueError(f\"Unknown shape: {shape}\")\n    \n    def __repr__(self) -> str:\n        \"\"\"String representation of device.\"\"\"\n        return f\"{self.__class__.__name__}({self.device_params})\"\n    \n    def __str__(self) -> str:\n        \"\"\"Human-readable string representation.\"\"\"\n        return f\"{self.__class__.__name__} with {len(self.device_params)} parameters\"
+        Args:
+            magnetization: Current magnetization vector (unit vector)
+            applied_field: External applied field (A/m)
+            
+        Returns:
+            Total effective field vector (A/m)
+        """
+        pass
+    
+    @abstractmethod
+    def compute_resistance(self, magnetization: np.ndarray) -> float:
+        """Compute device resistance based on magnetization state.
+        
+        Args:
+            magnetization: Current magnetization vector
+            
+        Returns:
+            Device resistance (Ω)
+        """
+        pass
+    
+    def get_parameter(self, key: str, default: Any = None) -> Any:
+        """Get device parameter value.
+        
+        Args:
+            key: Parameter key
+            default: Default value if key not found
+            
+        Returns:
+            Parameter value
+        """
+        return self.device_params.get(key, default)
+    
+    def set_parameter(self, key: str, value: Any) -> None:
+        """Set device parameter value.
+        
+        Args:
+            key: Parameter key
+            value: Parameter value
+        """
+        self.device_params[key] = value
+    
+    def validate_magnetization(self, magnetization: np.ndarray) -> np.ndarray:
+        """Validate and normalize magnetization vector.
+        
+        Args:
+            magnetization: Input magnetization vector
+            
+        Returns:
+            Normalized unit magnetization vector
+            
+        Raises:
+            ValueError: If input is invalid
+        """
+        if not isinstance(magnetization, np.ndarray):
+            magnetization = np.array(magnetization)
+        
+        if magnetization.shape != (3,):
+            raise ValueError(f"Magnetization must be 3D vector, got shape {magnetization.shape}")
+        
+        magnitude = np.linalg.norm(magnetization)
+        if magnitude < 1e-12:
+            raise ValueError("Magnetization vector cannot be zero")
+        
+        return magnetization / magnitude
+    
+    def get_device_info(self) -> Dict[str, Any]:
+        """Get comprehensive device information.
+        
+        Returns:
+            Dictionary with all device information
+        """
+        return {
+            'device_type': self.__class__.__name__,
+            'volume': self.volume,
+            'thickness': self.thickness,
+            'saturation_magnetization': self.saturation_magnetization,
+            'parameters': self.device_params.copy()
+        }
+    
+    def __repr__(self) -> str:
+        """String representation of device."""
+        return f"{self.__class__.__name__}(volume={self.volume:.2e}, Ms={self.saturation_magnetization:.0f})"
+    
+    def __str__(self) -> str:
+        """Human-readable string representation."""
+        return f"{self.__class__.__name__} with {len(self.device_params)} parameters"

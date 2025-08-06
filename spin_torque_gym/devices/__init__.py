@@ -11,7 +11,7 @@ from .base_device import BaseSpintronicDevice
 from .stt_mram import STTMRAMDevice
 from .sot_mram import SOTMRAMDevice
 from .vcma_mram import VCMAMRAMDevice
-from .skyrmion import SkyrmionDevice
+from .skyrmion_device import SkyrmionDevice
 from .device_factory import DeviceFactory
 
 __all__ = [

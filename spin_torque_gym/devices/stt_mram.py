@@ -2,13 +2,12 @@
 
 This module implements the STT-MRAM device physics including:
 - Magnetic tunnel junction (MTJ) structure
-- Spin-transfer torque effects
+- Spin-transfer torque effects  
 - TMR-based resistance calculation
-- Energy barriers and switching dynamics
 """
 
 import numpy as np
-from typing import Dict, Any, Tuple, Optional
+from typing import Dict, Any, Optional
 from .base_device import BaseSpintronicDevice
 
 
@@ -16,15 +15,7 @@ class STTMRAMDevice(BaseSpintronicDevice):
     """Spin-Transfer Torque MRAM device model."""
     
     def __init__(self, device_params: Dict[str, Any]):
-        """Initialize STT-MRAM device.
-        
-        Args:
-            device_params: Device parameters including:
-                - geometry: size, thickness, aspect_ratio
-                - materials: free/reference layer properties
-                - resistance: parallel/antiparallel resistance values
-                - thermal: temperature-dependent parameters
-        """
+        """Initialize STT-MRAM device."""
         super().__init__(device_params)
         
         # Initialize reference layer magnetization (typically pinned)
@@ -45,5 +36,61 @@ class STTMRAMDevice(BaseSpintronicDevice):
         
         for param in required_params:
             if param not in self.device_params:
-                raise ValueError(f\"Missing required parameter: {param}\")\
-        \n        # Validate parameter ranges\n        if self.device_params['volume'] <= 0:\n            raise ValueError(\"Volume must be positive\")\n        if self.device_params['saturation_magnetization'] <= 0:\n            raise ValueError(\"Saturation magnetization must be positive\")\n        if not 0 <= self.device_params['damping'] <= 1:\n            raise ValueError(\"Damping must be between 0 and 1\")\n        if not 0 <= self.device_params['polarization'] <= 1:\n            raise ValueError(\"Polarization must be between 0 and 1\")\n    \n    def compute_effective_field(\n        self,\n        magnetization: np.ndarray,\n        applied_field: np.ndarray,\n        temperature: float = 300.0\n    ) -> np.ndarray:\n        \"\"\"Compute total effective magnetic field for STT-MRAM.\n        \n        Args:\n            magnetization: Free layer magnetization (unit vector)\n            applied_field: External applied field (T)\n            temperature: Temperature in Kelvin\n            \n        Returns:\n            Total effective field vector (T)\n        \"\"\"\n        m = self.validate_magnetization(magnetization)\n        \n        # Applied field contribution\n        h_eff = applied_field.copy()\n        \n        # Uniaxial anisotropy field (perpendicular anisotropy for pMTJ)\n        k_u = self.get_parameter('uniaxial_anisotropy', 1e6)\n        ms = self.get_parameter('saturation_magnetization', 800e3)\n        easy_axis = self.get_parameter('easy_axis', np.array([0, 0, 1]))\n        \n        cos_theta = np.dot(m, easy_axis)\n        h_anis = (2 * k_u / (self.mu_0 * ms)) * cos_theta * easy_axis\n        h_eff += h_anis\n        \n        # Demagnetization field (shape anisotropy)\n        demag_factors = self.get_parameter(\n            'demag_factors', \n            self.compute_demagnetization_factors(\n                shape=self.get_parameter('shape', 'ellipsoid'),\n                aspect_ratio=self.get_parameter('aspect_ratio', 1.0)\n            )\n        )\n        h_demag = -ms * demag_factors * m\n        h_eff += h_demag\n        \n        # Exchange field (simplified uniform exchange)\n        a_ex = self.get_parameter('exchange_constant', 20e-12)\n        volume = self.get_parameter('volume')\n        thickness = self.get_parameter('thickness', (volume / 1e-14)**(1/3))\n        \n        # Exchange field from neighboring cells (simplified)\n        if a_ex > 0:\n            exchange_length = np.sqrt(2 * a_ex / (self.mu_0 * ms**2))\n            h_exchange = (2 * a_ex / (self.mu_0 * ms * thickness**2)) * m  # Placeholder\n            h_eff += h_exchange * 0.1  # Small contribution for single domain\n        \n        # Interlayer exchange coupling (if present)\n        j_iec = self.get_parameter('interlayer_exchange', 0.0)  # J/m²\n        if j_iec != 0:\n            thickness_free = self.get_parameter('free_layer_thickness', 1e-9)\n            h_iec = (j_iec / (self.mu_0 * ms * thickness_free)) * self.reference_magnetization\n            h_eff += h_iec\n        \n        # Stray field from reference layer (simplified dipolar)\n        include_stray = self.get_parameter('include_stray_field', False)\n        if include_stray:\n            separation = self.get_parameter('barrier_thickness', 1e-9)\n            ms_ref = self.get_parameter('reference_ms', ms)\n            volume_ref = self.get_parameter('reference_volume', volume)\n            \n            # Simple dipolar field approximation\n            magnetic_moment = ms_ref * volume_ref\n            h_stray = (self.mu_0 * magnetic_moment / (4 * np.pi * separation**3)) * \\\n                     (3 * np.dot(self.reference_magnetization, easy_axis) * easy_axis - self.reference_magnetization)\n            h_eff += h_stray\n        \n        return h_eff\n    \n    def compute_spin_torque(\n        self,\n        magnetization: np.ndarray,\n        current: float,\n        voltage: float = 0.0\n    ) -> Tuple[np.ndarray, np.ndarray]:\n        \"\"\"Compute spin-transfer torque terms for STT-MRAM.\n        \n        Args:\n            magnetization: Free layer magnetization (unit vector)\n            current: Current density through MTJ (A/m²)\n            voltage: Applied voltage (V) - can modify spin torque efficiency\n            \n        Returns:\n            Tuple of (spin_transfer_torque, field_like_torque)\n        \"\"\"\n        if abs(current) < 1e-12:\n            return np.zeros(3), np.zeros(3)\n        \n        m = self.validate_magnetization(magnetization)\n        p = self.reference_magnetization\n        \n        # Spin torque efficiency parameters\n        polarization = self.get_parameter('polarization')\n        ms = self.get_parameter('saturation_magnetization')\n        volume = self.get_parameter('volume')\n        thickness = self.get_parameter('thickness', (volume / 1e-14)**(1/3))\n        \n        # Slonczewski spin torque efficiency\n        beta = (polarization * self.gamma) / (2 * ms * thickness)\n        \n        # Voltage dependence of spin torque (optional)\n        if voltage != 0:\n            v_half = self.get_parameter('voltage_half', 0.5)  # Half-bias voltage\n            voltage_factor = 1.0 / (1.0 + (voltage / v_half)**2) if v_half > 0 else 1.0\n            beta *= voltage_factor\n        \n        # Angle dependence factor (for more accurate modeling)\n        cos_theta = np.dot(m, p)\n        angle_factor = 1.0 / (1.0 + self.get_parameter('lambda', 1.0) * cos_theta**2)\n        beta *= angle_factor\n        \n        # Spin-transfer torque (Slonczewski term)\n        m_cross_p = np.cross(m, p)\n        tau_stt = beta * current * np.cross(m, m_cross_p)\n        \n        # Field-like torque (often smaller, can be negative)\n        beta_fl = self.get_parameter('field_like_ratio', 0.1) * beta\n        tau_fl = beta_fl * current * m_cross_p\n        \n        return tau_stt, tau_fl\n    \n    def compute_energy(\n        self,\n        magnetization: np.ndarray,\n        applied_field: np.ndarray,\n        temperature: float = 300.0\n    ) -> float:\n        \"\"\"Compute total magnetic energy for STT-MRAM.\n        \n        Args:\n            magnetization: Free layer magnetization (unit vector)\n            applied_field: External field (T)\n            temperature: Temperature in Kelvin\n            \n        Returns:\n            Total energy (J)\n        \"\"\"\n        m = self.validate_magnetization(magnetization)\n        ms = self.get_parameter('saturation_magnetization')\n        volume = self.get_parameter('volume')\n        \n        # Zeeman energy (interaction with applied field)\n        e_zeeman = -self.mu_0 * ms * volume * np.dot(m, applied_field)\n        \n        # Uniaxial anisotropy energy\n        k_u = self.get_parameter('uniaxial_anisotropy')\n        easy_axis = self.get_parameter('easy_axis', np.array([0, 0, 1]))\n        cos_theta = np.dot(m, easy_axis)\n        e_anisotropy = -k_u * volume * cos_theta**2\n        \n        # Demagnetization energy (shape anisotropy)\n        demag_factors = self.get_parameter(\n            'demag_factors',\n            self.compute_demagnetization_factors(\n                shape=self.get_parameter('shape', 'ellipsoid'),\n                aspect_ratio=self.get_parameter('aspect_ratio', 1.0)\n            )\n        )\n        e_demag = 0.5 * self.mu_0 * ms**2 * volume * np.sum(demag_factors * m**2)\n        \n        # Exchange energy (uniform magnetization assumption)\n        e_exchange = 0.0  # Constant for single domain\n        \n        # Interlayer exchange coupling energy\n        j_iec = self.get_parameter('interlayer_exchange', 0.0)\n        area = self.get_parameter('area', volume / self.get_parameter('thickness', 1e-9))\n        e_iec = -j_iec * area * np.dot(m, self.reference_magnetization)\n        \n        return e_zeeman + e_anisotropy + e_demag + e_exchange + e_iec\n    \n    def compute_resistance(\n        self,\n        magnetization: np.ndarray,\n        reference_magnetization: Optional[np.ndarray] = None\n    ) -> float:\n        \"\"\"Compute MTJ resistance using TMR effect.\n        \n        Args:\n            magnetization: Free layer magnetization\n            reference_magnetization: Reference layer magnetization (optional)\n            \n        Returns:\n            Resistance (Ω)\n        \"\"\"\n        m = self.validate_magnetization(magnetization)\n        p = reference_magnetization if reference_magnetization is not None else self.reference_magnetization\n        p = self.validate_magnetization(p)\n        \n        # Resistance values\n        r_p = self.get_parameter('resistance_parallel', 1e3)  # Parallel resistance (Ω)\n        r_ap = self.get_parameter('resistance_antiparallel', 2e3)  # Antiparallel resistance (Ω)\n        \n        # TMR ratio\n        tmr = (r_ap - r_p) / r_p\n        \n        # Angular dependence (cosine model)\n        cos_theta = np.dot(m, p)\n        resistance = r_p * (1 + tmr * (1 - cos_theta) / 2)\n        \n        # More accurate angular dependence (optional)\n        if self.get_parameter('use_advanced_tmr', False):\n            # Include higher-order angular dependence\n            a2 = self.get_parameter('tmr_a2', 0.0)  # Second-order coefficient\n            a4 = self.get_parameter('tmr_a4', 0.0)  # Fourth-order coefficient\n            \n            sin2_theta = 1 - cos_theta**2\n            advanced_factor = 1 + a2 * sin2_theta + a4 * sin2_theta**2\n            resistance *= advanced_factor\n        \n        return max(resistance, r_p * 0.5)  # Ensure positive resistance\n    \n    def compute_switching_probability(\n        self,\n        current: float,\n        pulse_duration: float,\n        temperature: float = 300.0,\n        initial_state: np.ndarray = None,\n        target_state: np.ndarray = None\n    ) -> float:\n        \"\"\"Compute switching probability using macrospin model.\n        \n        Args:\n            current: Current density (A/m²)\n            pulse_duration: Pulse duration (s)\n            temperature: Temperature (K)\n            initial_state: Initial magnetization state\n            target_state: Target magnetization state\n            \n        Returns:\n            Switching probability (0-1)\n        \"\"\"\n        if initial_state is None:\n            initial_state = np.array([0, 0, -1])  # Anti-parallel\n        if target_state is None:\n            target_state = np.array([0, 0, 1])   # Parallel\n        \n        # Energy barrier calculation\n        k_u = self.get_parameter('uniaxial_anisotropy')\n        volume = self.get_parameter('volume')\n        energy_barrier = k_u * volume\n        \n        # Thermal stability factor\n        delta = energy_barrier / (self.k_b * temperature) if temperature > 0 else float('inf')\n        \n        # Current-assisted switching (simplified)\n        polarization = self.get_parameter('polarization')\n        ms = self.get_parameter('saturation_magnetization')\n        \n        # Critical current density\n        j_c = (2 * ms * volume * 2 * k_u / (self.mu_0 * ms)) / (polarization * self.gamma)\n        \n        # Switching rate (simplified model)\n        if abs(current) < j_c:\n            # Thermal activation regime\n            attempt_freq = self.get_parameter('attempt_frequency', 1e9)  # Hz\n            rate = attempt_freq * np.exp(-delta)\n        else:\n            # Current-driven regime\n            excess_current = abs(current) - j_c\n            rate = (excess_current / j_c) * 1e9  # Simplified rate\n        \n        # Switching probability over pulse duration\n        probability = 1 - np.exp(-rate * pulse_duration)\n        \n        return min(probability, 1.0)\n    \n    def get_optimal_switching_current(\n        self,\n        pulse_duration: float = 1e-9,\n        success_probability: float = 0.99\n    ) -> float:\n        \"\"\"Find optimal switching current for given constraints.\n        \n        Args:\n            pulse_duration: Available pulse duration (s)\n            success_probability: Required success probability\n            \n        Returns:\n            Optimal current density (A/m²)\n        \"\"\"\n        # Critical current density\n        k_u = self.get_parameter('uniaxial_anisotropy')\n        ms = self.get_parameter('saturation_magnetization')\n        polarization = self.get_parameter('polarization')\n        volume = self.get_parameter('volume')\n        \n        h_k = 2 * k_u / (self.mu_0 * ms)  # Anisotropy field\n        j_c = (2 * ms * h_k) / (polarization * self.gamma)\n        \n        # Add margin for reliable switching\n        safety_factor = self.get_parameter('safety_factor', 1.5)\n        optimal_current = j_c * safety_factor\n        \n        # Adjust for pulse duration (shorter pulses need higher current)\n        if pulse_duration < 1e-9:\n            time_factor = (1e-9 / pulse_duration)**0.5\n            optimal_current *= time_factor\n        \n        return optimal_current\n    \n    def analyze_switching_dynamics(\n        self,\n        current_range: Tuple[float, float],\n        n_points: int = 50\n    ) -> Dict[str, np.ndarray]:\n        \"\"\"Analyze switching characteristics vs current.\n        \n        Args:\n            current_range: (I_min, I_max) current range (A/m²)\n            n_points: Number of analysis points\n            \n        Returns:\n            Dictionary with switching analysis results\n        \"\"\"\n        currents = np.linspace(current_range[0], current_range[1], n_points)\n        \n        results = {\n            'currents': currents,\n            'switching_probability': [],\n            'energy_consumed': [],\n            'switching_time': []\n        }\n        \n        for current in currents:\n            # Switching probability (1 ns pulse)\n            prob = self.compute_switching_probability(current, 1e-9)\n            results['switching_probability'].append(prob)\n            \n            # Energy consumed\n            resistance = self.compute_resistance(np.array([0, 0, -1]))\n            area = self.get_parameter('area', 1e-14)\n            voltage = current * resistance * area\n            energy = voltage**2 / resistance * 1e-9  # 1 ns pulse\n            results['energy_consumed'].append(energy)\n            \n            # Characteristic switching time (simplified)\n            if abs(current) > 0:\n                switching_time = 1.0 / (abs(current) / 1e6)  # Rough estimate\n                results['switching_time'].append(min(switching_time, 10e-9))\n            else:\n                results['switching_time'].append(10e-9)\n        \n        # Convert to arrays\n        for key in ['switching_probability', 'energy_consumed', 'switching_time']:\n            results[key] = np.array(results[key])\n        \n        return results
+                raise ValueError(f"Missing required parameter: {param}")
+        
+        # Call parent validation
+        super()._validate_parameters()
+        
+        # Validate parameter ranges
+        if self.device_params['volume'] <= 0:
+            raise ValueError("Volume must be positive")
+        if self.device_params['saturation_magnetization'] <= 0:
+            raise ValueError("Saturation magnetization must be positive")
+        if not 0 <= self.device_params['damping'] <= 1:
+            raise ValueError("Damping must be between 0 and 1")
+        if not 0 <= self.device_params['polarization'] <= 1:
+            raise ValueError("Polarization must be between 0 and 1")
+    
+    def compute_effective_field(
+        self,
+        magnetization: np.ndarray,
+        applied_field: np.ndarray
+    ) -> np.ndarray:
+        """Compute total effective magnetic field for STT-MRAM."""
+        m = self.validate_magnetization(magnetization)
+        
+        # Applied field contribution
+        h_eff = applied_field.copy()
+        
+        # Uniaxial anisotropy field
+        k_u = self.get_parameter('uniaxial_anisotropy', 1e6)
+        ms = self.get_parameter('saturation_magnetization', 800e3)
+        easy_axis = self.get_parameter('easy_axis', np.array([0, 0, 1]))
+        
+        cos_theta = np.dot(m, easy_axis)
+        h_anis = (2 * k_u / (self.mu0 * ms)) * cos_theta * easy_axis
+        h_eff += h_anis
+        
+        return h_eff
+    
+    def compute_resistance(self, magnetization: np.ndarray) -> float:
+        """Compute MTJ resistance using TMR effect."""
+        m = self.validate_magnetization(magnetization)
+        p = self.reference_magnetization
+        
+        # Resistance values
+        r_p = self.get_parameter('resistance_parallel', 1e3)
+        r_ap = self.get_parameter('resistance_antiparallel', 2e3)
+        
+        # TMR ratio
+        tmr = (r_ap - r_p) / r_p
+        
+        # Angular dependence (cosine model)
+        cos_theta = np.dot(m, p)
+        resistance = r_p * (1 + tmr * (1 - cos_theta) / 2)
+        
+        return max(resistance, r_p * 0.5)  # Ensure positive resistance
+    
+    def __repr__(self) -> str:
+        """String representation of device."""
+        return f"STTMRAMDevice(volume={self.volume:.2e}, Ms={self.saturation_magnetization:.0f})"
