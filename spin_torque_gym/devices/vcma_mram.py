@@ -133,8 +133,9 @@ class VCMAMRAMDevice(BaseSpintronicDevice):
         # Electric field
         electric_field = voltage / self.dielectric_thickness
         
-        # VCMA effect: ΔK = ξ × E where ξ is VCMA coefficient
-        anisotropy_change = self.vcma_coefficient * electric_field / self.thickness
+        # VCMA effect: ΔK = ξ × E where ξ is VCMA coefficient (J/(V⋅m))
+        # For switching, VCMA should reduce anisotropy - use negative sign
+        anisotropy_change = -self.vcma_coefficient * abs(voltage) / (self.dielectric_thickness**2)
         
         effective_anisotropy = self.base_anisotropy + anisotropy_change
         
@@ -433,8 +434,9 @@ class VCMAMRAMDevice(BaseSpintronicDevice):
         # Angle with easy axis
         cos_theta = abs(np.dot(magnetization, easy_axis))
         
-        # Energy difference between current state and hard axis
-        energy_barrier = k_eff * self.volume * (1 - cos_theta**2)
+        # For switching, the relevant barrier is between stable states
+        # For uniaxial anisotropy: E = K * V (full barrier between +z and -z states)
+        energy_barrier = abs(k_eff) * self.volume
         
         return max(energy_barrier, 0.0)
     

@@ -60,7 +60,7 @@ class STTMRAMDevice(BaseSpintronicDevice):
         m = self.validate_magnetization(magnetization)
         
         # Applied field contribution
-        h_eff = applied_field.copy()
+        h_eff = applied_field.astype(float).copy()
         
         # Uniaxial anisotropy field
         k_u = self.get_parameter('uniaxial_anisotropy', 1e6)

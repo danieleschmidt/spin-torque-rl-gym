@@ -274,7 +274,8 @@ class SkyrmionDevice(BaseSpintronicDevice):
         
         # Stability ratio
         if E_thermal > 0:
-            stability = min(1.0, E_skyrmion / (40 * E_thermal))  # 40 kT threshold
+            # Use absolute value of energy and ensure result is in [0, 1]
+            stability = min(1.0, abs(E_skyrmion) / (40 * E_thermal))  # 40 kT threshold
         else:
             stability = 1.0
         

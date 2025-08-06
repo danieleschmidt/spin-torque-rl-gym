@@ -1,250 +1,617 @@
-"""Integration tests for Gymnasium environment."""
+"""Integration tests for Gymnasium environments."""
 
 import numpy as np
 import pytest
+import gymnasium as gym
+
+from spin_torque_gym.envs.spin_torque_env import SpinTorqueEnv
+from spin_torque_gym.envs.array_env import SpinTorqueArrayEnv
+from spin_torque_gym.envs.skyrmion_env import SkyrmionRacetrackEnv
 
 
 @pytest.mark.integration
 class TestSpinTorqueEnvironment:
-    """Test Spin-Torque RL environment integration."""
+    """Test basic Spin-Torque RL environment integration."""
 
-    def test_environment_creation(self, env_config):
-        """Test environment can be created with configuration."""
-        # Placeholder test for future environment implementation
-        config = env_config
-        assert config["device_type"] in ["stt_mram", "sot_mram", "vcma_mram", "skyrmion"]
-        assert config["max_steps"] > 0
-        assert 0 < config["success_threshold"] <= 1.0
-
-    def test_gymnasium_interface(self):
+    @pytest.fixture
+    def env_config(self):
+        """Basic environment configuration."""
+        return {
+            'device_type': 'stt_mram',
+            'device_params': {
+                'volume': 1e-24,
+                'saturation_magnetization': 800e3,
+                'damping': 0.01,
+                'uniaxial_anisotropy': 1e6,
+                'polarization': 0.7,
+                'easy_axis': np.array([0, 0, 1]),
+                'reference_magnetization': np.array([0, 0, 1]),
+                'resistance_parallel': 1e3,
+                'resistance_antiparallel': 2e3
+            },
+            'max_steps': 100,
+            'reward_type': 'alignment'
+        }
+    
+    @pytest.fixture
+    def env(self, env_config):
+        """Create environment instance."""
+        return SpinTorqueEnv(**env_config)
+    
+    def test_environment_creation(self, env):
+        """Test environment can be created successfully."""
+        assert isinstance(env, SpinTorqueEnv)
+        assert hasattr(env, 'action_space')
+        assert hasattr(env, 'observation_space')
+        assert hasattr(env, 'reset')
+        assert hasattr(env, 'step')
+        assert hasattr(env, 'render')
+    
+    def test_gymnasium_interface_compliance(self, env):
         """Test Gymnasium interface compliance."""
-        try:
-            import gymnasium as gym
-            # Placeholder for environment registration
-            # env = gym.make('SpinTorque-v0')
-            # assert hasattr(env, 'action_space')
-            # assert hasattr(env, 'observation_space')
-            # assert hasattr(env, 'reset')
-            # assert hasattr(env, 'step')
-            pytest.skip("Environment not yet registered")
-        except ImportError:
-            pytest.skip("Gymnasium not available")
+        # Check required attributes
+        assert hasattr(env, 'action_space')
+        assert hasattr(env, 'observation_space')
+        
+        # Check action space
+        assert hasattr(env.action_space, 'shape')
+        assert hasattr(env.action_space, 'sample')
+        
+        # Check observation space
+        assert hasattr(env.observation_space, 'shape')
+        assert hasattr(env.observation_space, 'sample')
+        
+        # Test reset
+        obs, info = env.reset()
+        assert obs in env.observation_space
+        assert isinstance(info, dict)
+        
+        # Test step
+        action = env.action_space.sample()
+        obs, reward, terminated, truncated, info = env.step(action)
+        assert obs in env.observation_space
+        assert isinstance(reward, (int, float))
+        assert isinstance(terminated, bool)
+        assert isinstance(truncated, bool)
+        assert isinstance(info, dict)
+    
+    def test_reset_functionality(self, env):
+        """Test reset functionality."""
+        # First reset
+        obs1, info1 = env.reset(seed=42)
+        assert obs1 in env.observation_space
+        assert isinstance(info1, dict)
+        
+        # Take some steps
+        for _ in range(5):
+            action = env.action_space.sample()
+            env.step(action)
+        
+        # Reset again with same seed
+        obs2, info2 = env.reset(seed=42)
+        
+        # Should return to same initial state
+        assert np.allclose(obs1, obs2, rtol=1e-6)
+    
+    def test_deterministic_behavior(self, env):
+        """Test deterministic behavior with fixed seed."""
+        # Set seed and take actions
+        env.reset(seed=123)
+        
+        actions = []
+        observations = []
+        rewards = []
+        
+        for i in range(10):
+            action = np.array([1e6 + i * 1e5, 1e-9])  # Deterministic actions
+            obs, reward, terminated, truncated, info = env.step(action)
+            actions.append(action)
+            observations.append(obs)
+            rewards.append(reward)
+            
+            if terminated or truncated:
+                break
+        
+        # Reset with same seed and repeat
+        env.reset(seed=123)
+        
+        for i, action in enumerate(actions):
+            obs, reward, terminated, truncated, info = env.step(action)
+            assert np.allclose(observations[i], obs, rtol=1e-6)
+            assert np.isclose(rewards[i], reward, rtol=1e-6)
+            
+            if terminated or truncated:
+                break
+    
+    def test_episode_length_limits(self, env):
+        """Test episode length limits."""
+        env.reset()
+        
+        steps = 0
+        while True:
+            action = env.action_space.sample()
+            obs, reward, terminated, truncated, info = env.step(action)
+            steps += 1
+            
+            # Episode should end within max_steps
+            if terminated or truncated:
+                break
+            
+            # Safety check
+            assert steps <= env.max_steps + 1
+        
+        assert steps <= env.max_steps
+    
+    def test_reward_bounds(self, env):
+        """Test reward bounds are reasonable."""
+        env.reset()
+        rewards = []
+        
+        for _ in range(50):
+            action = env.action_space.sample()
+            obs, reward, terminated, truncated, info = env.step(action)
+            rewards.append(reward)
+            
+            # Reward should be finite
+            assert np.isfinite(reward)
+            
+            if terminated or truncated:
+                break
+        
+        # Rewards should be in reasonable range
+        rewards = np.array(rewards)
+        assert np.all(rewards >= -1000)  # Not too negative
+        assert np.all(rewards <= 1000)   # Not too positive
 
-    def test_observation_space_structure(self, sample_magnetization, target_magnetization):
-        """Test observation space structure."""
-        # Expected observation components
-        observation = {
-            'magnetization': sample_magnetization,
-            'target': target_magnetization,
-            'resistance': 7.5e3,  # Ω
-            'temperature': 300,  # K
-            'time_remaining': 0.8,  # Normalized
-            'energy_used': 10e-12,  # J
-            'last_action': [1e6, 1e-9]  # [current, duration]
+
+@pytest.mark.integration
+class TestMultipleDeviceTypes:
+    """Test integration across different device types."""
+    
+    def test_stt_mram_environment(self):
+        """Test STT-MRAM environment."""
+        config = {
+            'device_type': 'stt_mram',
+            'device_params': {
+                'volume': 1e-24,
+                'saturation_magnetization': 800e3,
+                'damping': 0.01,
+                'uniaxial_anisotropy': 1e6,
+                'polarization': 0.7,
+                'easy_axis': np.array([0, 0, 1])
+            },
+            'max_steps': 50
         }
         
-        # Validate observation structure
-        assert len(observation['magnetization']) == 3
-        assert len(observation['target']) == 3
-        assert observation['resistance'] > 0
-        assert observation['temperature'] >= 0
-        assert 0 <= observation['time_remaining'] <= 1
-        assert observation['energy_used'] >= 0
-        assert len(observation['last_action']) == 2
+        env = SpinTorqueEnv(**config)
+        obs, info = env.reset()
+        
+        # Test a few steps
+        for _ in range(5):
+            action = np.array([5e6, 1e-9])  # Current density, duration
+            obs, reward, terminated, truncated, info = env.step(action)
+            assert np.isfinite(reward)
+            
+            if terminated or truncated:
+                break
+    
+    def test_sot_mram_environment(self):
+        """Test SOT-MRAM environment."""
+        config = {
+            'device_type': 'sot_mram',
+            'device_params': {
+                'volume': 1e-24,
+                'saturation_magnetization': 800e3,
+                'damping': 0.01,
+                'uniaxial_anisotropy': 1e6,
+                'easy_axis': np.array([0, 0, 1]),
+                'spin_hall_angle': 0.1
+            },
+            'max_steps': 50
+        }
+        
+        env = SpinTorqueEnv(**config)
+        obs, info = env.reset()
+        
+        # Test a few steps
+        for _ in range(5):
+            action = np.array([1e7, 1e-9])  # Higher current needed for SOT
+            obs, reward, terminated, truncated, info = env.step(action)
+            assert np.isfinite(reward)
+            
+            if terminated or truncated:
+                break
+    
+    def test_vcma_mram_environment(self):
+        """Test VCMA-MRAM environment."""
+        config = {
+            'device_type': 'vcma_mram',
+            'device_params': {
+                'volume': 1e-24,
+                'saturation_magnetization': 800e3,
+                'damping': 0.01,
+                'uniaxial_anisotropy': 1e6,
+                'easy_axis': np.array([0, 0, 1]),
+                'vcma_coefficient': 100e-6
+            },
+            'max_steps': 50
+        }
+        
+        env = SpinTorqueEnv(**config)
+        obs, info = env.reset()
+        
+        # Test a few steps
+        for _ in range(5):
+            action = np.array([1.5, 1e-9])  # Voltage, duration
+            obs, reward, terminated, truncated, info = env.step(action)
+            assert np.isfinite(reward)
+            
+            if terminated or truncated:
+                break
 
-    def test_action_space_structure(self, mock_action):
-        """Test action space structure."""
-        action = mock_action
-        
-        # Continuous action space
-        assert 'current' in action
-        assert 'duration' in action
-        assert action['current'] != 0  # Non-zero current
-        assert action['duration'] > 0  # Positive duration
 
-    def test_reward_function_properties(self):
-        """Test reward function properties."""
-        # Success reward
-        success_reward = 10.0
-        assert success_reward > 0
+@pytest.mark.integration
+class TestArrayEnvironment:
+    """Test array environment integration."""
+    
+    @pytest.fixture
+    def array_config(self):
+        """Array environment configuration."""
+        return {
+            'array_size': (3, 3),
+            'device_type': 'stt_mram',
+            'device_params': {
+                'volume': 1e-24,
+                'saturation_magnetization': 800e3,
+                'damping': 0.01,
+                'uniaxial_anisotropy': 1e6,
+                'polarization': 0.7,
+                'easy_axis': np.array([0, 0, 1])
+            },
+            'max_steps': 50,
+            'coupling_strength': 1e-24
+        }
+    
+    @pytest.fixture
+    def array_env(self, array_config):
+        """Create array environment instance."""
+        return SpinTorqueArrayEnv(**array_config)
+    
+    def test_array_environment_creation(self, array_env):
+        """Test array environment creation."""
+        assert isinstance(array_env, SpinTorqueArrayEnv)
+        assert array_env.array_size == (3, 3)
+        assert array_env.num_devices == 9
+    
+    def test_array_observation_space(self, array_env):
+        """Test array observation space."""
+        obs, info = array_env.reset()
         
-        # Energy penalty
-        energy_penalty = -0.1
-        assert energy_penalty < 0
+        # Check observation structure
+        assert 'magnetizations' in obs
+        assert 'target_pattern' in obs
+        assert 'resistances' in obs
         
-        # Speed reward
-        speed_reward = 1.0
-        assert speed_reward > 0
+        # Check shapes
+        assert obs['magnetizations'].shape == (3, 3, 3)  # (rows, cols, xyz)
+        assert obs['target_pattern'].shape == (3, 3, 3)
+        assert obs['resistances'].shape == (3, 3)
         
-        # Total reward should be finite
-        total_reward = success_reward + energy_penalty + speed_reward
-        assert np.isfinite(total_reward)
+        # Check normalization
+        mags = obs['magnetizations']
+        norms = np.linalg.norm(mags, axis=-1)
+        assert np.allclose(norms, 1.0, rtol=1e-6)
+    
+    def test_array_action_space(self, array_env):
+        """Test array action space."""
+        # Check action space structure
+        assert hasattr(array_env.action_space, 'shape')
+        
+        # Test sampling
+        action = array_env.action_space.sample()
+        assert action in array_env.action_space
+    
+    def test_array_step_functionality(self, array_env):
+        """Test array environment step."""
+        obs, info = array_env.reset()
+        
+        # Test different action types
+        # Row action
+        action = {'type': 'row', 'index': 1, 'current': 5e6, 'duration': 1e-9}
+        obs, reward, terminated, truncated, info = array_env.step(action)
+        assert np.isfinite(reward)
+        
+        # Column action
+        action = {'type': 'column', 'index': 2, 'current': 5e6, 'duration': 1e-9}
+        obs, reward, terminated, truncated, info = array_env.step(action)
+        assert np.isfinite(reward)
+        
+        # Individual device action
+        action = {'type': 'individual', 'row': 0, 'col': 1, 'current': 5e6, 'duration': 1e-9}
+        obs, reward, terminated, truncated, info = array_env.step(action)
+        assert np.isfinite(reward)
+    
+    def test_coupling_effects(self, array_env):
+        """Test inter-device coupling effects."""
+        obs, info = array_env.reset()
+        
+        # Apply action to central device
+        action = {'type': 'individual', 'row': 1, 'col': 1, 'current': 1e7, 'duration': 1e-9}
+        obs_before = obs['magnetizations'].copy()
+        
+        obs_after, reward, terminated, truncated, info = array_env.step(action)
+        
+        # Central device should change more than edge devices
+        change_center = np.linalg.norm(obs_after['magnetizations'][1, 1] - obs_before[1, 1])
+        change_corner = np.linalg.norm(obs_after['magnetizations'][0, 0] - obs_before[0, 0])
+        
+        # With coupling, corner device should also change but less than center
+        assert change_center > change_corner
 
-    def test_episode_termination(self):
-        """Test episode termination conditions."""
-        # Success termination
-        success_threshold = 0.95
-        alignment = 0.97
-        is_success = alignment >= success_threshold
-        assert is_success
+
+@pytest.mark.integration
+class TestSkyrmionEnvironment:
+    """Test skyrmion racetrack environment integration."""
+    
+    @pytest.fixture
+    def skyrmion_config(self):
+        """Skyrmion environment configuration."""
+        return {
+            'track_length': 1e-6,  # 1 μm
+            'track_width': 200e-9,  # 200 nm
+            'num_skyrmions': 3,
+            'device_params': {
+                'volume': 1e-24,
+                'saturation_magnetization': 800e3,
+                'exchange_constant': 2e-11,
+                'dmi_constant': 3e-3,
+                'skyrmion_radius': 20e-9,
+                'track_width': 200e-9,
+                'spin_hall_angle': 0.1
+            },
+            'max_steps': 50
+        }
+    
+    @pytest.fixture
+    def skyrmion_env(self, skyrmion_config):
+        """Create skyrmion environment instance."""
+        return SkyrmionRacetrackEnv(**skyrmion_config)
+    
+    def test_skyrmion_environment_creation(self, skyrmion_env):
+        """Test skyrmion environment creation."""
+        assert isinstance(skyrmion_env, SkyrmionRacetrackEnv)
+        assert skyrmion_env.track_length == 1e-6
+        assert skyrmion_env.track_width == 200e-9
+        assert skyrmion_env.num_skyrmions == 3
+    
+    def test_skyrmion_observation_space(self, skyrmion_env):
+        """Test skyrmion observation space."""
+        obs, info = skyrmion_env.reset()
         
-        # Timeout termination
-        max_steps = 100
-        current_step = 101
-        is_timeout = current_step >= max_steps
-        assert is_timeout
+        # Check observation structure
+        assert 'skyrmion_positions' in obs
+        assert 'track_field' in obs
+        assert 'target_positions' in obs
         
-        # Failure termination (optional)
-        min_alignment = -0.9
-        is_failure = alignment < min_alignment
-        assert not is_failure  # With alignment = 0.97
+        # Check shapes
+        assert obs['skyrmion_positions'].shape == (3, 2)  # 3 skyrmions, (x,y) positions
+        assert obs['target_positions'].shape == (3, 2)
+        
+        # Check position bounds
+        positions = obs['skyrmion_positions']
+        assert np.all(positions[:, 0] >= 0)  # x >= 0
+        assert np.all(positions[:, 0] <= skyrmion_env.track_length)  # x <= track_length
+        assert np.all(positions[:, 1] >= 0)  # y >= 0
+        assert np.all(positions[:, 1] <= skyrmion_env.track_width)  # y <= track_width
+    
+    def test_skyrmion_action_space(self, skyrmion_env):
+        """Test skyrmion action space."""
+        # Test sampling
+        action = skyrmion_env.action_space.sample()
+        assert action in skyrmion_env.action_space
+        
+        # Action should be current density and duration
+        assert len(action) == 2
+        assert isinstance(action[0], (int, float))  # current density
+        assert isinstance(action[1], (int, float))  # duration
+    
+    def test_skyrmion_movement(self, skyrmion_env):
+        """Test skyrmion movement under current."""
+        obs, info = skyrmion_env.reset()
+        initial_positions = obs['skyrmion_positions'].copy()
+        
+        # Apply current
+        action = np.array([1e6, 1e-9])  # 1 MA/m², 1 ns
+        obs_after, reward, terminated, truncated, info = skyrmion_env.step(action)
+        final_positions = obs_after['skyrmion_positions']
+        
+        # Skyrmions should have moved
+        movement = np.linalg.norm(final_positions - initial_positions, axis=1)
+        assert np.any(movement > 1e-12)  # At least some movement
+    
+    def test_boundary_conditions(self, skyrmion_env):
+        """Test skyrmion boundary conditions."""
+        obs, info = skyrmion_env.reset()
+        
+        # Apply strong current to try to move skyrmions out of bounds
+        for _ in range(10):
+            action = np.array([1e7, 1e-9])  # Strong current
+            obs, reward, terminated, truncated, info = skyrmion_env.step(action)
+            
+            positions = obs['skyrmion_positions']
+            
+            # Check bounds
+            assert np.all(positions[:, 0] >= 0)
+            assert np.all(positions[:, 0] <= skyrmion_env.track_length)
+            assert np.all(positions[:, 1] >= 0)
+            assert np.all(positions[:, 1] <= skyrmion_env.track_width)
+            
+            if terminated or truncated:
+                break
 
 
 @pytest.mark.integration
 @pytest.mark.slow
-class TestMultiDeviceEnvironment:
-    """Test multi-device environment integration."""
-
-    def test_array_environment_structure(self):
-        """Test array environment structure."""
-        array_size = (4, 4)
-        num_devices = array_size[0] * array_size[1]
+class TestPerformanceIntegration:
+    """Test performance-critical integration scenarios."""
+    
+    def test_environment_step_performance(self):
+        """Test environment step performance."""
+        import time
         
-        # Observation should include all devices
-        magnetizations = np.random.normal(0, 1, (array_size[0], array_size[1], 3))
-        magnetizations = magnetizations / np.linalg.norm(magnetizations, axis=-1, keepdims=True)
+        config = {
+            'device_type': 'stt_mram',
+            'device_params': {
+                'volume': 1e-24,
+                'saturation_magnetization': 800e3,
+                'damping': 0.01,
+                'uniaxial_anisotropy': 1e6,
+                'polarization': 0.7,
+                'easy_axis': np.array([0, 0, 1])
+            },
+            'max_steps': 1000
+        }
         
-        assert magnetizations.shape == (array_size[0], array_size[1], 3)
-        assert np.allclose(np.linalg.norm(magnetizations, axis=-1), 1.0)
-
-    def test_coupling_effects(self):
-        """Test inter-device coupling effects."""
-        # Dipolar coupling strength
-        coupling_strength = 1e-21  # J
-        distance = 100e-9  # m between devices
+        env = SpinTorqueEnv(**config)
+        env.reset()
         
-        # Coupling should decay with distance
-        coupling_at_distance = coupling_strength / distance**3
-        assert coupling_at_distance > 0
+        # Time 100 steps
+        start_time = time.time()
+        for _ in range(100):
+            action = np.array([5e6, 1e-9])
+            obs, reward, terminated, truncated, info = env.step(action)
+            if terminated or truncated:
+                env.reset()
         
-        # Closer devices should have stronger coupling
-        closer_distance = 50e-9  # m
-        closer_coupling = coupling_strength / closer_distance**3
-        assert closer_coupling > coupling_at_distance
-
-    def test_parallel_simulation(self):
-        """Test parallel simulation capabilities."""
-        # Test that multiple devices can be simulated simultaneously
-        num_devices = 16
-        timestep = 1e-12  # s
-        simulation_time = 10e-9  # s
-        num_steps = int(simulation_time / timestep)
+        elapsed_time = time.time() - start_time
+        steps_per_second = 100 / elapsed_time
         
-        assert num_devices > 1
-        assert num_steps > 0
-        assert timestep > 0
-
-
-@pytest.mark.integration
-class TestRewardFunctionIntegration:
-    """Test reward function integration."""
-
-    def test_composite_reward_calculation(self, sample_magnetization, target_magnetization):
-        """Test composite reward function."""
-        m_current = sample_magnetization
-        m_target = target_magnetization
+        # Should achieve reasonable performance (>10 steps/second)
+        assert steps_per_second > 10, f"Performance too slow: {steps_per_second:.1f} steps/second"
+    
+    def test_array_environment_performance(self):
+        """Test array environment performance."""
+        import time
         
-        # Alignment reward
-        alignment = np.dot(m_current, m_target)
-        alignment_reward = 10.0 if alignment > 0.95 else 0.0
+        config = {
+            'array_size': (4, 4),
+            'device_type': 'stt_mram',
+            'device_params': {
+                'volume': 1e-24,
+                'saturation_magnetization': 800e3,
+                'damping': 0.01,
+                'uniaxial_anisotropy': 1e6,
+                'polarization': 0.7,
+                'easy_axis': np.array([0, 0, 1])
+            },
+            'max_steps': 100
+        }
         
-        # Energy penalty (example: 1 pJ consumed)
-        energy_consumed = 1e-12  # J
-        energy_penalty = -0.1 * energy_consumed / 1e-12  # Normalized to pJ
+        env = SpinTorqueArrayEnv(**config)
+        env.reset()
         
-        # Speed bonus (example: 1 ns switching time)
-        switching_time = 1e-9  # s
-        speed_bonus = 1.0 / (1.0 + switching_time / 1e-9)  # Normalized to ns
+        # Time 50 steps
+        start_time = time.time()
+        for _ in range(50):
+            action = {'type': 'row', 'index': 0, 'current': 5e6, 'duration': 1e-9}
+            obs, reward, terminated, truncated, info = env.step(action)
+            if terminated or truncated:
+                env.reset()
         
-        # Composite reward
-        total_reward = alignment_reward + energy_penalty + speed_bonus
+        elapsed_time = time.time() - start_time
+        steps_per_second = 50 / elapsed_time
         
-        assert isinstance(total_reward, float)
-        assert np.isfinite(total_reward)
-
-    def test_reward_scaling_and_normalization(self):
-        """Test reward scaling and normalization."""
-        # Raw reward components (different scales)
-        success_component = 1.0  # Binary success
-        energy_component = -1e-12  # Energy in Joules
-        time_component = 1e-9  # Time in seconds
-        
-        # Normalized components
-        success_normalized = success_component * 10.0  # Scale up
-        energy_normalized = energy_component * 1e12  # Scale to pJ
-        time_normalized = time_component * 1e9  # Scale to ns
-        
-        # All components should be similar magnitude
-        components = [success_normalized, energy_normalized, time_normalized]
-        magnitudes = [abs(comp) for comp in components]
-        max_magnitude = max(magnitudes)
-        min_magnitude = min(magnitudes)
-        
-        # Check that magnitudes are within reasonable range
-        assert max_magnitude / min_magnitude < 100  # Less than 2 orders of magnitude
+        # Array environment will be slower due to multiple devices
+        assert steps_per_second > 1, f"Array performance too slow: {steps_per_second:.1f} steps/second"
 
 
 @pytest.mark.integration
-@pytest.mark.physics
-class TestPhysicsIntegration:
-    """Test physics simulation integration."""
-
-    def test_llgs_solver_integration(self, sample_magnetization, physics_config):
-        """Test LLGS solver integration with environment."""
-        m_initial = sample_magnetization
-        config = physics_config
+class TestErrorHandlingIntegration:
+    """Test error handling in integration scenarios."""
+    
+    def test_invalid_device_type(self):
+        """Test handling of invalid device type."""
+        config = {
+            'device_type': 'invalid_device',
+            'device_params': {},
+            'max_steps': 50
+        }
         
-        # Simulation parameters
-        dt = config["timestep"]
-        max_time = config["max_time"]
-        num_steps = int(max_time / dt)
+        with pytest.raises(ValueError, match="Unknown device type"):
+            SpinTorqueEnv(**config)
+    
+    def test_missing_device_parameters(self):
+        """Test handling of missing device parameters."""
+        config = {
+            'device_type': 'stt_mram',
+            'device_params': {
+                # Missing required parameters
+                'volume': 1e-24
+            },
+            'max_steps': 50
+        }
         
-        # Mock time evolution (placeholder)
-        m_current = m_initial.copy()
-        for step in range(min(10, num_steps)):  # Test first 10 steps
-            # Simple precession around z-axis (example)
-            omega = 1e9  # rad/s
-            theta = omega * dt * step
-            m_current = np.array([
-                np.sin(theta),
-                0,
-                np.cos(theta)
-            ])
-            
-            # Ensure normalization
-            m_current = m_current / np.linalg.norm(m_current)
-            assert np.isclose(np.linalg.norm(m_current), 1.0)
-
-    def test_energy_conservation(self, physics_config):
-        """Test energy conservation in simulation."""
-        # Total energy should be conserved (approximately)
-        if not physics_config["include_thermal"]:
-            # Without thermal fluctuations, energy should be conserved
-            initial_energy = 1e-20  # J
-            final_energy = initial_energy  # In ideal case
-            
-            energy_error = abs(final_energy - initial_energy) / initial_energy
-            assert energy_error < 1e-6  # 0.0001% error tolerance
-
-    def test_stability_analysis(self, sample_magnetization):
-        """Test numerical stability of physics integration."""
-        m = sample_magnetization
+        with pytest.raises(ValueError, match="Missing required parameter"):
+            SpinTorqueEnv(**config)
+    
+    def test_invalid_action_bounds(self):
+        """Test handling of out-of-bounds actions."""
+        config = {
+            'device_type': 'stt_mram',
+            'device_params': {
+                'volume': 1e-24,
+                'saturation_magnetization': 800e3,
+                'damping': 0.01,
+                'uniaxial_anisotropy': 1e6,
+                'polarization': 0.7,
+                'easy_axis': np.array([0, 0, 1])
+            },
+            'max_steps': 50
+        }
         
-        # Small perturbation
-        epsilon = 1e-10
-        m_perturbed = m + np.array([epsilon, 0, 0])
-        m_perturbed = m_perturbed / np.linalg.norm(m_perturbed)
+        env = SpinTorqueEnv(**config)
+        env.reset()
         
-        # Perturbation should remain small
-        perturbation_magnitude = np.linalg.norm(m_perturbed - m)
-        assert perturbation_magnitude < 1e-9
+        # Try extreme actions - should be handled gracefully
+        extreme_actions = [
+            np.array([1e20, 1e-9]),   # Very high current
+            np.array([1e6, -1e-9]),   # Negative duration
+            np.array([0, 1e-3]),      # Very long duration
+        ]
+        
+        for action in extreme_actions:
+            obs, reward, terminated, truncated, info = env.step(action)
+            # Should not crash, reward should be finite
+            assert np.isfinite(reward)
+    
+    def test_array_invalid_actions(self):
+        """Test array environment with invalid actions."""
+        config = {
+            'array_size': (2, 2),
+            'device_type': 'stt_mram',
+            'device_params': {
+                'volume': 1e-24,
+                'saturation_magnetization': 800e3,
+                'damping': 0.01,
+                'uniaxial_anisotropy': 1e6,
+                'polarization': 0.7,
+                'easy_axis': np.array([0, 0, 1])
+            },
+            'max_steps': 50
+        }
+        
+        env = SpinTorqueArrayEnv(**config)
+        env.reset()
+        
+        # Invalid actions
+        invalid_actions = [
+            {'type': 'row', 'index': 5, 'current': 1e6, 'duration': 1e-9},  # Out of bounds index
+            {'type': 'column', 'index': -1, 'current': 1e6, 'duration': 1e-9},  # Negative index
+            {'type': 'individual', 'row': 3, 'col': 0, 'current': 1e6, 'duration': 1e-9},  # Out of bounds
+            {'type': 'invalid', 'index': 0, 'current': 1e6, 'duration': 1e-9},  # Invalid type
+        ]
+        
+        for action in invalid_actions:
+            obs, reward, terminated, truncated, info = env.step(action)
+            # Should handle gracefully without crashing
+            assert np.isfinite(reward)
