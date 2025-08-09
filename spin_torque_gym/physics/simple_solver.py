@@ -101,78 +101,75 @@ class SimpleLLGSSolver:
                 }
                 
                 # Try cached result for identical problems
-                cached_result = self.optimizer.cached_computation(
-                    lambda: None,  # Dummy function, we just want to check cache
-                    cache_params,
-                    "llgs_solve"
-                )
+                cache_key = f"llgs_solve_{self.optimizer.hash_params(cache_params)}"
+                cached_result = self.optimizer.cache.get(cache_key)
                 if cached_result is not None:
                     self.profiler.increment_counter("cache_hits")
                     return cached_result
                 
                 # Input validation and normalization
-            m_initial = self._validate_magnetization(m_initial)
-            t_start, t_end = time_span
-            
-            if t_end <= t_start:
-                return self._create_trivial_solution(m_initial, t_start, t_end)
-            
-            # Extract device parameters with defaults
-            alpha = device_params.get('damping', 0.01)
-            ms = device_params.get('saturation_magnetization', 800e3)
-            k_u = device_params.get('uniaxial_anisotropy', 1e6)
-            volume = device_params.get('volume', 1e-24)
-            easy_axis = device_params.get('easy_axis', np.array([0, 0, 1]))
-            polarization = device_params.get('polarization', 0.7)
-            
-            # Normalize easy axis
-            easy_axis = easy_axis / np.linalg.norm(easy_axis)
-            
-            # Time stepping parameters
-            dt = min(self.max_step, (t_end - t_start) / 100)
-            n_steps = max(10, int((t_end - t_start) / dt))
-            dt = (t_end - t_start) / n_steps
-            
-            # Initialize arrays
-            t = np.linspace(t_start, t_end, n_steps + 1)
-            m = np.zeros((n_steps + 1, 3))
-            m[0] = m_initial.copy()
-            
-            # Solve with timeout protection
-            for i in range(n_steps):
-                if time.time() - start_time > self.timeout:
-                    self.timeout_count += 1
-                    logger.warning(f"Solver timeout after {self.timeout}s at step {i}/{n_steps}")
-                    # Return partial solution
-                    return {
-                        't': t[:i+1],
-                        'm': m[:i+1],
-                        'success': False,
-                        'message': 'Timeout',
-                        'solve_time': time.time() - start_time
-                    }
+                m_initial = self._validate_magnetization(m_initial)
+                t_start, t_end = time_span
                 
-                try:
-                    m[i+1] = self._integration_step(
-                        m[i], t[i], dt, device_params,
-                        current_func, field_func,
-                        thermal_noise, temperature
-                    )
+                if t_end <= t_start:
+                    return self._create_trivial_solution(m_initial, t_start, t_end)
+                
+                # Extract device parameters with defaults
+                alpha = device_params.get('damping', 0.01)
+                ms = device_params.get('saturation_magnetization', 800e3)
+                k_u = device_params.get('uniaxial_anisotropy', 1e6)
+                volume = device_params.get('volume', 1e-24)
+                easy_axis = device_params.get('easy_axis', np.array([0, 0, 1]))
+                polarization = device_params.get('polarization', 0.7)
+                
+                # Normalize easy axis
+                easy_axis = easy_axis / np.linalg.norm(easy_axis)
+                
+                # Time stepping parameters
+                dt = min(self.max_step, (t_end - t_start) / 100)
+                n_steps = max(10, int((t_end - t_start) / dt))
+                dt = (t_end - t_start) / n_steps
+                
+                # Initialize arrays
+                t = np.linspace(t_start, t_end, n_steps + 1)
+                m = np.zeros((n_steps + 1, 3))
+                m[0] = m_initial.copy()
+                
+                # Solve with timeout protection
+                for i in range(n_steps):
+                    if time.time() - start_time > self.timeout:
+                        self.timeout_count += 1
+                        logger.warning(f"Solver timeout after {self.timeout}s at step {i}/{n_steps}")
+                        # Return partial solution
+                        return {
+                            't': t[:i+1],
+                            'm': m[:i+1],
+                            'success': False,
+                            'message': 'Timeout',
+                            'solve_time': time.time() - start_time
+                        }
                     
-                    # Ensure normalization
-                    m[i+1] = m[i+1] / np.linalg.norm(m[i+1])
+                    try:
+                        m[i+1] = self._integration_step(
+                            m[i], t[i], dt, device_params,
+                            current_func, field_func,
+                            thermal_noise, temperature
+                        )
+                        
+                        # Ensure normalization
+                        m[i+1] = m[i+1] / np.linalg.norm(m[i+1])
                     
-                except Exception as e:
-                    logger.warning(f"Integration failed at step {i}: {e}")
-                    # Return solution up to failure point
-                    return {
-                        't': t[:i+1],
-                        'm': m[:i+1],
-                        'success': False,
-                        'message': f'Integration failure: {e}',
-                        'solve_time': time.time() - start_time
-                    }
-            
+                    except Exception as e:
+                        logger.warning(f"Integration failed at step {i}: {e}")
+                        # Return solution up to failure point
+                        return {
+                            't': t[:i+1],
+                            'm': m[:i+1],
+                            'success': False,
+                            'message': f'Integration failure: {e}',
+                            'solve_time': time.time() - start_time
+                        }
+                
                 solve_time = time.time() - start_time
                 self.last_solve_time = solve_time
                 
@@ -185,23 +182,20 @@ class SimpleLLGSSolver:
                     'n_steps': n_steps
                 }
                 
-                # Cache successful result
-                self.optimizer.cache.put(
-                    f"llgs_solve_{self.optimizer.hash_params(cache_params)}", 
-                    result
-                )
+                # Cache successful result  
+                self.optimizer.cache.put(cache_key, result)
                 
                 return result
             
-        except Exception as e:
-            logger.error(f"LLGS solver failed: {e}")
-            return {
-                't': np.array([t_start, t_end]),
-                'm': np.array([m_initial, m_initial]),
-                'success': False,
-                'message': f'Solver error: {e}',
-                'solve_time': time.time() - start_time
-            }
+            except Exception as e:
+                logger.error(f"LLGS solver failed: {e}")
+                return {
+                    't': np.array([t_start, t_end]),
+                    'm': np.array([m_initial, m_initial]),
+                    'success': False,
+                    'message': f'Solver error: {e}',
+                    'solve_time': time.time() - start_time
+                }
     
     def _validate_magnetization(self, m: np.ndarray) -> np.ndarray:
         """Validate and normalize magnetization vector."""
