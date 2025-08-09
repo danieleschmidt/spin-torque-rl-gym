@@ -4,14 +4,14 @@ This module implements thermal noise models for magnetization dynamics,
 including Brown's thermal fluctuation model and correlated noise generation.
 """
 
-import numpy as np
 from typing import Optional, Tuple
-import scipy.stats as stats
+
+import numpy as np
 
 
 class ThermalFluctuations:
     """Thermal fluctuation model for magnetization dynamics."""
-    
+
     def __init__(
         self,
         temperature: float = 300.0,
@@ -27,22 +27,22 @@ class ThermalFluctuations:
         """
         self.temperature = temperature
         self.correlation_time = correlation_time
-        
+
         # Physical constants
         self.k_b = 1.380649e-23  # Boltzmann constant (J/K)
         self.mu_0 = 4 * np.pi * 1e-7  # Permeability of free space (H/m)
-        
+
         # Random number generator
         self.rng = np.random.default_rng(seed)
-        
+
         # Internal state for correlated noise
         self._previous_noise = np.zeros(3)
         self._correlation_factor = 0.0
-    
+
     def set_temperature(self, temperature: float) -> None:
         """Update temperature."""
         self.temperature = temperature
-    
+
     def compute_noise_strength(
         self,
         damping: float,
@@ -63,15 +63,15 @@ class ThermalFluctuations:
         """
         if self.temperature <= 0:
             return 0.0
-        
+
         # Brown's thermal field strength
         variance = (
             2 * damping * self.k_b * self.temperature /
             (gamma * self.mu_0 * saturation_magnetization * volume)
         )
-        
+
         return np.sqrt(variance)
-    
+
     def generate_thermal_field(
         self,
         damping: float,
@@ -97,22 +97,22 @@ class ThermalFluctuations:
         noise_strength = self.compute_noise_strength(
             damping, saturation_magnetization, volume, gamma
         )
-        
+
         if noise_strength == 0:
             return np.zeros(3)
-        
+
         if correlated and self.correlation_time > 0:
             return self._generate_correlated_noise(noise_strength, dt)
         else:
             return self._generate_white_noise(noise_strength)
-    
+
     def _generate_white_noise(self, strength: float) -> np.ndarray:
         """Generate uncorrelated white noise."""
         return strength * self.rng.normal(0, 1, 3)
-    
+
     def _generate_correlated_noise(
-        self, 
-        strength: float, 
+        self,
+        strength: float,
         dt: float
     ) -> np.ndarray:
         """Generate temporally correlated noise using Ornstein-Uhlenbeck process."""
@@ -121,21 +121,21 @@ class ThermalFluctuations:
             decay = np.exp(-dt / self.correlation_time)
         else:
             decay = 0.0
-        
+
         # Generate new uncorrelated component
         white_noise = self.rng.normal(0, 1, 3)
-        
+
         # Combine with previous noise for correlation
         correlated_noise = (
-            decay * self._previous_noise + 
+            decay * self._previous_noise +
             np.sqrt(1 - decay**2) * white_noise
         )
-        
+
         # Update previous noise state
         self._previous_noise = correlated_noise
-        
+
         return strength * correlated_noise
-    
+
     def compute_thermal_barrier(
         self,
         anisotropy_constant: float,
@@ -152,9 +152,9 @@ class ThermalFluctuations:
         """
         if self.temperature <= 0:
             return float('inf')
-        
+
         return anisotropy_constant * volume / (self.k_b * self.temperature)
-    
+
     def compute_switching_probability(
         self,
         energy_barrier: float,
@@ -173,15 +173,15 @@ class ThermalFluctuations:
         """
         if self.temperature <= 0:
             return 0.0
-        
+
         # Thermal activation rate
         rate = attempt_frequency * np.exp(-energy_barrier / (self.k_b * self.temperature))
-        
+
         # Probability over measurement time
         probability = 1 - np.exp(-rate * measurement_time)
-        
+
         return min(probability, 1.0)
-    
+
     def sample_switching_time(
         self,
         energy_barrier: float,
@@ -198,14 +198,14 @@ class ThermalFluctuations:
         """
         if self.temperature <= 0:
             return float('inf')
-        
+
         rate = attempt_frequency * np.exp(-energy_barrier / (self.k_b * self.temperature))
-        
+
         if rate <= 0:
             return float('inf')
-        
+
         return self.rng.exponential(1.0 / rate)
-    
+
     def compute_retention_time(
         self,
         energy_barrier: float,
@@ -224,13 +224,13 @@ class ThermalFluctuations:
         """
         if self.temperature <= 0 or failure_rate <= 0:
             return float('inf')
-        
+
         # Time for failure_rate probability of switching
         thermal_factor = energy_barrier / (self.k_b * self.temperature)
         retention_time = -np.log(failure_rate) / (attempt_frequency * np.exp(-thermal_factor))
-        
+
         return retention_time
-    
+
     def analyze_thermal_stability(
         self,
         device_params: dict,
@@ -247,20 +247,20 @@ class ThermalFluctuations:
         """
         volume = device_params.get('volume', 1e-24)  # m³
         k_u = device_params.get('uniaxial_anisotropy', 1e6)  # J/m³
-        
+
         # Energy barrier
         energy_barrier = k_u * volume
-        
+
         # Thermal stability factor
         delta = self.compute_thermal_barrier(k_u, volume)
-        
+
         # Switching probability and retention
         time_seconds = time_scale * 365.25 * 24 * 3600  # Convert years to seconds
         switch_prob = self.compute_switching_probability(
             energy_barrier, measurement_time=time_seconds
         )
         retention_time = self.compute_retention_time(energy_barrier) / (365.25 * 24 * 3600)  # years
-        
+
         return {
             'thermal_stability_factor': delta,
             'energy_barrier_J': energy_barrier,
@@ -270,7 +270,7 @@ class ThermalFluctuations:
             'is_thermally_stable': delta > 40,  # Common stability criterion
             'temperature_K': self.temperature
         }
-    
+
     def generate_temperature_sweep(
         self,
         temp_range: Tuple[float, float],
@@ -289,7 +289,7 @@ class ThermalFluctuations:
         """
         temperatures = np.linspace(temp_range[0], temp_range[1], n_points)
         original_temp = self.temperature
-        
+
         results = {
             'temperature': temperatures,
             'thermal_stability_factor': [],
@@ -297,40 +297,40 @@ class ThermalFluctuations:
             'retention_time': [],
             'noise_strength': []
         }
-        
+
         volume = device_params.get('volume', 1e-24)
         k_u = device_params.get('uniaxial_anisotropy', 1e6)
         damping = device_params.get('damping', 0.01)
         ms = device_params.get('saturation_magnetization', 800e3)
-        
+
         for temp in temperatures:
             self.set_temperature(temp)
-            
+
             # Thermal stability factor
             delta = self.compute_thermal_barrier(k_u, volume)
             results['thermal_stability_factor'].append(delta)
-            
+
             # Switching probability (1 year)
             energy_barrier = k_u * volume
             switch_prob = self.compute_switching_probability(
                 energy_barrier, measurement_time=365.25*24*3600
             )
             results['switching_probability'].append(switch_prob)
-            
+
             # Retention time
             retention = self.compute_retention_time(energy_barrier)
             results['retention_time'].append(retention / (365.25*24*3600))  # years
-            
+
             # Noise strength
             noise = self.compute_noise_strength(damping, ms, volume)
             results['noise_strength'].append(noise)
-        
+
         # Restore original temperature
         self.set_temperature(original_temp)
-        
+
         # Convert lists to arrays
-        for key in ['thermal_stability_factor', 'switching_probability', 
+        for key in ['thermal_stability_factor', 'switching_probability',
                    'retention_time', 'noise_strength']:
             results[key] = np.array(results[key])
-        
+
         return results

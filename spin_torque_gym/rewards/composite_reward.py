@@ -5,14 +5,15 @@ multiple reward components with configurable weights for multi-objective
 optimization in spintronic device control.
 """
 
-import numpy as np
-from typing import Dict, Any, Callable, Optional, Union
 import warnings
+from typing import Any, Callable, Dict, Optional, Union
+
+import numpy as np
 
 
 class CompositeReward:
     """Composite reward function combining multiple objectives."""
-    
+
     def __init__(self, components: Dict[str, Dict[str, Any]]):
         """Initialize composite reward function.
         
@@ -25,23 +26,23 @@ class CompositeReward:
         """
         self.components = {}
         self.total_weight = 0.0
-        
+
         for name, config in components.items():
             self._add_component(name, config)
-    
+
     def _add_component(self, name: str, config: Dict[str, Any]) -> None:
         """Add a reward component."""
         if 'weight' not in config:
             raise ValueError(f"Component '{name}' missing required 'weight'")
         if 'function' not in config:
             raise ValueError(f"Component '{name}' missing required 'function'")
-        
+
         weight = float(config['weight'])
         function = config['function']
-        
+
         if not callable(function):
             raise ValueError(f"Component '{name}' function must be callable")
-        
+
         # Validate function signature
         try:
             # Test with dummy arguments
@@ -50,7 +51,7 @@ class CompositeReward:
                 raise ValueError(f"Component '{name}' function must return a number")
         except Exception as e:
             warnings.warn(f"Could not validate function for component '{name}': {e}")
-        
+
         self.components[name] = {
             'weight': weight,
             'function': function,
@@ -58,13 +59,13 @@ class CompositeReward:
             'clip': config.get('clip', None),
             'history': []
         }
-        
+
         self.total_weight += abs(weight)
-    
+
     def compute(
         self,
         observation: Optional[Any],
-        action: Optional[Any], 
+        action: Optional[Any],
         next_observation: Optional[Any],
         info: Dict[str, Any]
     ) -> float:
@@ -81,53 +82,53 @@ class CompositeReward:
         """
         total_reward = 0.0
         component_rewards = {}
-        
+
         for name, config in self.components.items():
             try:
                 # Compute component reward
                 component_reward = config['function'](observation, action, next_observation, info)
-                
+
                 # Apply normalization if specified
                 if config['normalize'] is not None:
                     component_reward = self._apply_normalization(
                         component_reward, config['normalize'], name
                     )
-                
+
                 # Apply clipping if specified
                 if config['clip'] is not None:
                     component_reward = self._apply_clipping(
                         component_reward, config['clip']
                     )
-                
+
                 # Weight and add to total
                 weighted_reward = config['weight'] * component_reward
                 total_reward += weighted_reward
-                
+
                 # Store for analysis
                 component_rewards[name] = component_reward
                 config['history'].append(component_reward)
-                
+
                 # Limit history length
                 if len(config['history']) > 1000:
                     config['history'] = config['history'][-500:]
-                
+
             except Exception as e:
                 warnings.warn(f"Error computing reward component '{name}': {e}")
                 component_rewards[name] = 0.0
-        
+
         # Store component breakdown in info if possible
         if hasattr(info, 'update'):
             info.update({
                 'reward_components': component_rewards,
                 'total_reward': total_reward
             })
-        
+
         return float(total_reward)
-    
+
     def _apply_normalization(
-        self, 
-        value: float, 
-        normalize_method: Union[str, Dict[str, float]], 
+        self,
+        value: float,
+        normalize_method: Union[str, Dict[str, float]],
         component_name: str
     ) -> float:
         """Apply normalization to reward component."""
@@ -139,7 +140,7 @@ class CompositeReward:
                     mean_val = np.mean(history)
                     return value - mean_val
                 return value
-            
+
             elif normalize_method == 'running_std':
                 # Normalize by running standard deviation
                 history = self.components[component_name]['history']
@@ -148,7 +149,7 @@ class CompositeReward:
                     mean_val = np.mean(history)
                     return (value - mean_val) / (std_val + 1e-8)
                 return value
-            
+
             elif normalize_method == 'unit_range':
                 # Normalize to [0, 1] based on historical min/max
                 history = self.components[component_name]['history']
@@ -158,49 +159,49 @@ class CompositeReward:
                     if max_val > min_val:
                         return (value - min_val) / (max_val - min_val)
                 return value
-            
+
             else:
                 warnings.warn(f"Unknown normalization method: {normalize_method}")
                 return value
-        
+
         elif isinstance(normalize_method, dict):
             # Explicit normalization parameters
             if 'mean' in normalize_method and 'std' in normalize_method:
                 mean = normalize_method['mean']
                 std = normalize_method['std']
                 return (value - mean) / (std + 1e-8)
-            
+
             elif 'min' in normalize_method and 'max' in normalize_method:
                 min_val = normalize_method['min']
                 max_val = normalize_method['max']
                 if max_val > min_val:
                     return (value - min_val) / (max_val - min_val)
                 return value
-            
+
             else:
                 warnings.warn(f"Invalid normalization config: {normalize_method}")
                 return value
-        
+
         else:
             warnings.warn(f"Invalid normalization type: {type(normalize_method)}")
             return value
-    
+
     def _apply_clipping(self, value: float, clip_bounds: tuple) -> float:
         """Apply clipping to reward component."""
         if len(clip_bounds) != 2:
             warnings.warn(f"Clip bounds must be tuple of length 2, got {len(clip_bounds)}")
             return value
-        
+
         min_val, max_val = clip_bounds
         return np.clip(value, min_val, max_val)
-    
+
     def get_component_statistics(self) -> Dict[str, Dict[str, float]]:
         """Get statistics for each reward component."""
         stats = {}
-        
+
         for name, config in self.components.items():
             history = config['history']
-            
+
             if len(history) > 0:
                 stats[name] = {
                     'mean': float(np.mean(history)),
@@ -219,9 +220,9 @@ class CompositeReward:
                     'weight': config['weight'],
                     'count': 0
                 }
-        
+
         return stats
-    
+
     def reset_history(self, component_name: Optional[str] = None) -> None:
         """Reset component history.
         
@@ -236,7 +237,7 @@ class CompositeReward:
         else:
             for config in self.components.values():
                 config['history'] = []
-    
+
     def update_weight(self, component_name: str, new_weight: float) -> None:
         """Update weight of a component.
         
@@ -246,16 +247,16 @@ class CompositeReward:
         """
         if component_name not in self.components:
             raise ValueError(f"Component '{component_name}' not found")
-        
+
         old_weight = self.components[component_name]['weight']
         self.components[component_name]['weight'] = float(new_weight)
-        
+
         # Update total weight
         self.total_weight = self.total_weight - abs(old_weight) + abs(new_weight)
-    
+
     def add_component(
-        self, 
-        name: str, 
+        self,
+        name: str,
         weight: float,
         function: Callable,
         normalize: Optional[Union[str, Dict]] = None,
@@ -272,16 +273,16 @@ class CompositeReward:
         """
         if name in self.components:
             warnings.warn(f"Component '{name}' already exists, will be replaced")
-        
+
         config = {
             'weight': weight,
             'function': function,
             'normalize': normalize,
             'clip': clip
         }
-        
+
         self._add_component(name, config)
-    
+
     def remove_component(self, name: str) -> None:
         """Remove a reward component.
         
@@ -291,23 +292,23 @@ class CompositeReward:
         if name not in self.components:
             warnings.warn(f"Component '{name}' not found")
             return
-        
+
         weight = self.components[name]['weight']
         del self.components[name]
         self.total_weight -= abs(weight)
-    
+
     def get_component_names(self) -> list:
         """Get list of component names."""
         return list(self.components.keys())
-    
+
     def __repr__(self) -> str:
         """String representation."""
         component_info = []
         for name, config in self.components.items():
             component_info.append(f"{name}: weight={config['weight']:.3f}")
-        
+
         return f"CompositeReward({', '.join(component_info)})"
-    
+
     def __str__(self) -> str:
         """Human-readable string representation."""
         return f"CompositeReward with {len(self.components)} components (total weight: {self.total_weight:.3f})"
@@ -339,12 +340,12 @@ def stability_penalty(observation, action, next_observation, info) -> float:
     """Penalty for magnetization instability."""
     if next_observation is None:
         return 0.0
-    
+
     if isinstance(next_observation, dict):
         mag = next_observation.get('magnetization', np.array([0, 0, 1]))
     else:
         mag = next_observation[:3]  # Assume first 3 elements are magnetization
-    
+
     mag_norm = np.linalg.norm(mag)
     return -max(0, mag_norm - 1.1)  # Penalty for excessive magnitude
 
