@@ -8,16 +8,16 @@ This module implements various spintronic device models including:
 """
 
 from .base_device import BaseSpintronicDevice
-from .stt_mram import STTMRAMDevice
-from .sot_mram import SOTMRAMDevice
-from .vcma_mram import VCMAMRAMDevice
-from .skyrmion_device import SkyrmionDevice
 from .device_factory import DeviceFactory
+from .skyrmion_device import SkyrmionDevice
+from .sot_mram import SOTMRAMDevice
+from .stt_mram import STTMRAMDevice
+from .vcma_mram import VCMAMRAMDevice
 
 __all__ = [
     "BaseSpintronicDevice",
     "STTMRAMDevice",
-    "SOTMRAMDevice", 
+    "SOTMRAMDevice",
     "VCMAMRAMDevice",
     "SkyrmionDevice",
     "DeviceFactory"

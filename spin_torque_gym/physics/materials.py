@@ -4,11 +4,9 @@ This module provides experimentally validated material parameters for common
 spintronic materials and interfaces, including temperature and field dependence.
 """
 
-import numpy as np
-from typing import Dict, Any, Optional, List, Tuple
-from dataclasses import dataclass
 import json
-from pathlib import Path
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
 
 @dataclass
@@ -24,7 +22,7 @@ class MaterialProperties:
     density: float  # kg/m³
     resistivity: float  # Ω·m
     spin_polarization: float  # dimensionless
-    
+
     # Temperature dependence parameters
     ms_temperature_coeff: float = 0.0  # 1/K
     damping_temperature_coeff: float = 0.0  # 1/K
@@ -33,7 +31,7 @@ class MaterialProperties:
 
 class MaterialDatabase:
     """Database of spintronic material properties."""
-    
+
     def __init__(self, custom_materials: Optional[Dict[str, MaterialProperties]] = None):
         """Initialize material database.
         
@@ -41,14 +39,14 @@ class MaterialDatabase:
             custom_materials: Optional custom material definitions
         """
         self._materials = self._initialize_default_materials()
-        
+
         if custom_materials:
             self._materials.update(custom_materials)
-    
+
     def _initialize_default_materials(self) -> Dict[str, MaterialProperties]:
         """Initialize database with common spintronic materials."""
         materials = {}
-        
+
         # CoFeB - Common STT-MRAM free layer
         materials['CoFeB'] = MaterialProperties(
             name='CoFeB',
@@ -65,7 +63,7 @@ class MaterialDatabase:
             damping_temperature_coeff=1e-5,  # 1/K
             anisotropy_temperature_coeff=-3e3  # J/m³/K
         )
-        
+
         # Fe - Iron reference
         materials['Fe'] = MaterialProperties(
             name='Fe',
@@ -82,7 +80,7 @@ class MaterialDatabase:
             damping_temperature_coeff=5e-6,  # 1/K
             anisotropy_temperature_coeff=-1e3  # J/m³/K
         )
-        
+
         # Co - Cobalt
         materials['Co'] = MaterialProperties(
             name='Co',
@@ -99,7 +97,7 @@ class MaterialDatabase:
             damping_temperature_coeff=8e-6,  # 1/K
             anisotropy_temperature_coeff=-2e3  # J/m³/K
         )
-        
+
         # Ni - Nickel
         materials['Ni'] = MaterialProperties(
             name='Ni',
@@ -116,7 +114,7 @@ class MaterialDatabase:
             damping_temperature_coeff=2e-5,  # 1/K
             anisotropy_temperature_coeff=-1e2  # J/m³/K
         )
-        
+
         # Pt - Platinum (SOT applications)
         materials['Pt'] = MaterialProperties(
             name='Pt',
@@ -133,7 +131,7 @@ class MaterialDatabase:
             damping_temperature_coeff=0,
             anisotropy_temperature_coeff=0
         )
-        
+
         # Ta - Tantalum (SOT applications)
         materials['Ta'] = MaterialProperties(
             name='Ta',
@@ -150,7 +148,7 @@ class MaterialDatabase:
             damping_temperature_coeff=0,
             anisotropy_temperature_coeff=0
         )
-        
+
         # W - Tungsten (SOT applications)
         materials['W'] = MaterialProperties(
             name='W',
@@ -167,9 +165,9 @@ class MaterialDatabase:
             damping_temperature_coeff=0,
             anisotropy_temperature_coeff=0
         )
-        
+
         return materials
-    
+
     def get_material(self, name: str) -> MaterialProperties:
         """Get material properties by name.
         
@@ -185,17 +183,17 @@ class MaterialDatabase:
         if name not in self._materials:
             available = list(self._materials.keys())
             raise KeyError(f"Material '{name}' not found. Available: {available}")
-        
+
         return self._materials[name]
-    
+
     def list_materials(self) -> List[str]:
         """List all available materials."""
         return list(self._materials.keys())
-    
+
     def add_material(self, material: MaterialProperties) -> None:
         """Add custom material to database."""
         self._materials[material.name] = material
-    
+
     def get_temperature_adjusted_properties(
         self,
         material_name: str,
@@ -213,20 +211,20 @@ class MaterialDatabase:
         material = self.get_material(material_name)
         reference_temp = 300.0  # K
         delta_t = temperature - reference_temp
-        
+
         # Temperature-adjusted properties
         ms_adjusted = material.saturation_magnetization * (
             1 + material.ms_temperature_coeff * delta_t
         )
-        
+
         damping_adjusted = material.gilbert_damping * (
             1 + material.damping_temperature_coeff * delta_t
         )
-        
+
         anisotropy_adjusted = material.uniaxial_anisotropy + (
             material.anisotropy_temperature_coeff * delta_t
         )
-        
+
         return {
             'saturation_magnetization': max(0, ms_adjusted),
             'gilbert_damping': max(0, damping_adjusted),
@@ -237,7 +235,7 @@ class MaterialDatabase:
             'density': material.density,
             'resistivity': material.resistivity
         }
-    
+
     def create_bilayer_properties(
         self,
         layer1_name: str,
@@ -260,13 +258,13 @@ class MaterialDatabase:
         """
         mat1 = self.get_material(layer1_name)
         mat2 = self.get_material(layer2_name)
-        
+
         total_thickness = layer1_thickness + layer2_thickness
-        
+
         # Volume-weighted average properties
         w1 = layer1_thickness / total_thickness
         w2 = layer2_thickness / total_thickness
-        
+
         effective_props = {
             'saturation_magnetization': (
                 w1 * mat1.saturation_magnetization +
@@ -295,9 +293,9 @@ class MaterialDatabase:
             'interface_coupling': interface_coupling,
             'total_thickness': total_thickness
         }
-        
+
         return effective_props
-    
+
     def export_to_json(self, filename: str) -> None:
         """Export material database to JSON file.
         
@@ -305,7 +303,7 @@ class MaterialDatabase:
             filename: Output filename
         """
         export_data = {}
-        
+
         for name, material in self._materials.items():
             export_data[name] = {
                 'name': material.name,
@@ -322,10 +320,10 @@ class MaterialDatabase:
                 'damping_temperature_coeff': material.damping_temperature_coeff,
                 'anisotropy_temperature_coeff': material.anisotropy_temperature_coeff
             }
-        
+
         with open(filename, 'w') as f:
             json.dump(export_data, f, indent=2)
-    
+
     def load_from_json(self, filename: str) -> None:
         """Load materials from JSON file.
         
@@ -334,11 +332,11 @@ class MaterialDatabase:
         """
         with open(filename, 'r') as f:
             data = json.load(f)
-        
+
         for name, props in data.items():
             material = MaterialProperties(**props)
             self._materials[name] = material
-    
+
     def find_materials_by_property(
         self,
         property_name: str,
@@ -356,22 +354,22 @@ class MaterialDatabase:
             List of material names matching criteria
         """
         matching_materials = []
-        
+
         for name, material in self._materials.items():
             if not hasattr(material, property_name):
                 continue
-            
+
             value = getattr(material, property_name)
-            
+
             if min_value is not None and value < min_value:
                 continue
             if max_value is not None and value > max_value:
                 continue
-            
+
             matching_materials.append(name)
-        
+
         return matching_materials
-    
+
     def get_recommended_parameters(
         self,
         device_type: str,
@@ -408,16 +406,16 @@ class MaterialDatabase:
                 'target_thermal_stability': 50
             }
         }
-        
+
         if device_type not in recommendations:
             available = list(recommendations.keys())
             raise ValueError(f"Unknown device type '{device_type}'. Available: {available}")
-        
+
         config = recommendations[device_type].copy()
-        
+
         # Add temperature-adjusted properties for main magnetic layer
         main_material = config.get('free_layer', 'CoFeB')
         temp_props = self.get_temperature_adjusted_properties(main_material, temperature)
         config.update(temp_props)
-        
+
         return config

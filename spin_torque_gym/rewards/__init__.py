@@ -9,6 +9,6 @@ from .composite_reward import CompositeReward
 
 __all__ = [
     "BaseReward",
-    "FunctionBasedReward", 
+    "FunctionBasedReward",
     "CompositeReward"
 ]

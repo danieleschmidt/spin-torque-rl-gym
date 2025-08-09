@@ -6,12 +6,13 @@ used in spintronic device control environments.
 
 from abc import ABC, abstractmethod
 from typing import Any, Dict, Union
+
 import numpy as np
 
 
 class BaseReward(ABC):
     """Abstract base class for reward functions."""
-    
+
     def __init__(self, weight: float = 1.0, **kwargs):
         """Initialize base reward function.
         
@@ -21,7 +22,7 @@ class BaseReward(ABC):
         """
         self.weight = weight
         self.kwargs = kwargs
-    
+
     @abstractmethod
     def compute(
         self,
@@ -42,7 +43,7 @@ class BaseReward(ABC):
             Reward value (unweighted)
         """
         pass
-    
+
     def __call__(
         self,
         observation: Union[np.ndarray, Dict[str, Any]],
@@ -62,11 +63,11 @@ class BaseReward(ABC):
             Weighted reward value
         """
         return self.weight * self.compute(observation, action, next_observation, info)
-    
+
     def reset(self) -> None:
         """Reset reward function state (if any)."""
         pass
-    
+
     def get_info(self) -> Dict[str, Any]:
         """Get reward function information.
         
@@ -82,7 +83,7 @@ class BaseReward(ABC):
 
 class FunctionBasedReward(BaseReward):
     """Reward function based on a callable function."""
-    
+
     def __init__(self, function, weight: float = 1.0, **kwargs):
         """Initialize function-based reward.
         
@@ -93,7 +94,7 @@ class FunctionBasedReward(BaseReward):
         """
         super().__init__(weight, **kwargs)
         self.function = function
-    
+
     def compute(
         self,
         observation: Union[np.ndarray, Dict[str, Any]],

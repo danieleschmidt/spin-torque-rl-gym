@@ -17,7 +17,7 @@ register(
     max_episode_steps=1000,
 )
 
-# Register multi-device environment  
+# Register multi-device environment
 register(
     id='SpinTorqueArray-v0',
     entry_point='spin_torque_gym.envs:SpinTorqueArrayEnv',
@@ -26,7 +26,7 @@ register(
 
 # Register skyrmion environment
 register(
-    id='SkyrmionRacetrack-v0', 
+    id='SkyrmionRacetrack-v0',
     entry_point='spin_torque_gym.envs:SkyrmionRacetrackEnv',
     max_episode_steps=1500,
 )

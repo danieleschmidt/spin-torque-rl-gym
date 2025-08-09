@@ -5,9 +5,10 @@ various spintronic devices including STT-MRAM, SOT-MRAM, and others.
 """
 
 from gymnasium.envs.registration import register
-from .spin_torque_env import SpinTorqueEnv
+
 from .array_env import SpinTorqueArrayEnv
 from .skyrmion_env import SkyrmionRacetrackEnv
+from .spin_torque_env import SpinTorqueEnv
 
 # Register environments with Gymnasium
 register(
@@ -18,7 +19,7 @@ register(
 )
 
 register(
-    id='SpinTorqueArray-v0', 
+    id='SpinTorqueArray-v0',
     entry_point='spin_torque_gym.envs:SpinTorqueArrayEnv',
     max_episode_steps=200,
     kwargs={'array_size': (4, 4), 'device_type': 'stt_mram'}
@@ -33,6 +34,6 @@ register(
 
 __all__ = [
     "SpinTorqueEnv",
-    "SpinTorqueArrayEnv", 
+    "SpinTorqueArrayEnv",
     "SkyrmionRacetrackEnv"
 ]

@@ -4,24 +4,23 @@ This module provides a factory pattern for creating different types
 of spintronic devices with standardized interfaces.
 """
 
-from typing import Dict, Any, Type, Optional
-import warnings
+from typing import Any, Dict, Type
 
 from .base_device import BaseSpintronicDevice
-from .stt_mram import STTMRAMDevice
-from .sot_mram import SOTMRAMDevice
-from .vcma_mram import VCMAMRAMDevice
 from .skyrmion_device import SkyrmionDevice
+from .sot_mram import SOTMRAMDevice
+from .stt_mram import STTMRAMDevice
+from .vcma_mram import VCMAMRAMDevice
 
 
 class DeviceFactory:
     """Factory for creating spintronic device instances."""
-    
+
     def __init__(self):
         """Initialize device factory with registered device types."""
         self._device_types: Dict[str, Type[BaseSpintronicDevice]] = {}
         self._register_default_devices()
-    
+
     def _register_default_devices(self) -> None:
         """Register default device types."""
         self.register_device('stt_mram', STTMRAMDevice)
@@ -29,7 +28,7 @@ class DeviceFactory:
         self.register_device('vcma_mram', VCMAMRAMDevice)
         self.register_device('skyrmion', SkyrmionDevice)
         self.register_device('skyrmion_track', SkyrmionDevice)  # Alias for skyrmion environments
-    
+
     def register_device(self, device_type: str, device_class: Type[BaseSpintronicDevice]) -> None:
         """Register a new device type.
         
@@ -41,13 +40,13 @@ class DeviceFactory:
             ValueError: If device_class doesn't inherit from BaseSpintronicDevice
         """
         if not issubclass(device_class, BaseSpintronicDevice):
-            raise ValueError(f"Device class must inherit from BaseSpintronicDevice")
-        
+            raise ValueError("Device class must inherit from BaseSpintronicDevice")
+
         self._device_types[device_type.lower()] = device_class
-    
+
     def create_device(
-        self, 
-        device_type: str, 
+        self,
+        device_type: str,
         device_params: Dict[str, Any]
     ) -> BaseSpintronicDevice:
         """Create a device instance.
@@ -63,22 +62,22 @@ class DeviceFactory:
             ValueError: If device type is not registered
         """
         device_type = device_type.lower()
-        
+
         if device_type not in self._device_types:
             available_types = list(self._device_types.keys())
             raise ValueError(f"Unknown device type '{device_type}'. Available types: {available_types}")
-        
+
         device_class = self._device_types[device_type]
-        
+
         try:
             return device_class(device_params)
         except Exception as e:
             raise RuntimeError(f"Failed to create {device_type} device: {e}")
-    
+
     def get_available_devices(self) -> list:
         """Get list of available device types."""
         return list(self._device_types.keys())
-    
+
     def get_device_info(self, device_type: str) -> Dict[str, Any]:
         """Get information about a device type.
         
@@ -89,19 +88,19 @@ class DeviceFactory:
             Dictionary with device type information
         """
         device_type = device_type.lower()
-        
+
         if device_type not in self._device_types:
             raise ValueError(f"Unknown device type '{device_type}'")
-        
+
         device_class = self._device_types[device_type]
-        
+
         return {
             'name': device_type,
             'class': device_class.__name__,
             'module': device_class.__module__,
             'docstring': device_class.__doc__
         }
-    
+
     def create_default_device(self, device_type: str) -> BaseSpintronicDevice:
         """Create device with default parameters.
         
@@ -113,7 +112,7 @@ class DeviceFactory:
         """
         default_params = self.get_default_parameters(device_type)
         return self.create_device(device_type, default_params)
-    
+
     def get_default_parameters(self, device_type: str) -> Dict[str, Any]:
         """Get default parameters for a device type.
         
@@ -124,7 +123,7 @@ class DeviceFactory:
             Dictionary with default parameters
         """
         device_type = device_type.lower()
-        
+
         if device_type == 'stt_mram':
             return {
                 'volume': 50e-9 * 100e-9 * 2e-9,  # 50×100×2 nm³
@@ -191,10 +190,10 @@ class DeviceFactory:
                 'exchange_constant': 20e-12,
                 'polarization': 0.7
             }
-    
+
     def validate_parameters(
-        self, 
-        device_type: str, 
+        self,
+        device_type: str,
         device_params: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Validate and complete device parameters.
@@ -207,12 +206,12 @@ class DeviceFactory:
             Validated and completed parameters
         """
         device_type = device_type.lower()
-        
+
         # Get default parameters and update with provided ones
         default_params = self.get_default_parameters(device_type)
         validated_params = default_params.copy()
         validated_params.update(device_params)
-        
+
         # Device-specific validation
         if device_type == 'stt_mram':
             self._validate_stt_mram_params(validated_params)
@@ -222,40 +221,40 @@ class DeviceFactory:
             self._validate_vcma_mram_params(validated_params)
         elif device_type == 'skyrmion':
             self._validate_skyrmion_params(validated_params)
-        
+
         return validated_params
-    
+
     def _validate_stt_mram_params(self, params: Dict[str, Any]) -> None:
         """Validate STT-MRAM specific parameters."""
-        required = ['volume', 'saturation_magnetization', 'damping', 
+        required = ['volume', 'saturation_magnetization', 'damping',
                    'uniaxial_anisotropy', 'polarization']
-        
+
         for param in required:
             if param not in params:
                 raise ValueError(f"Missing required parameter for STT-MRAM: {param}")
-        
+
         # Validate ranges
         if params['volume'] <= 0:
             raise ValueError("Volume must be positive")
         if params['saturation_magnetization'] <= 0:
-            raise ValueError("Saturation magnetization must be positive")  
+            raise ValueError("Saturation magnetization must be positive")
         if not 0 <= params['damping'] <= 1:
             raise ValueError("Damping must be between 0 and 1")
         if not 0 <= params['polarization'] <= 1:
             raise ValueError("Polarization must be between 0 and 1")
-    
+
     def _validate_sot_mram_params(self, params: Dict[str, Any]) -> None:
         """Validate SOT-MRAM specific parameters."""
         # Similar validation for SOT-MRAM
         pass
-    
+
     def _validate_vcma_mram_params(self, params: Dict[str, Any]) -> None:
         """Validate VCMA-MRAM specific parameters."""
         # Similar validation for VCMA-MRAM
         pass
-    
+
     def _validate_skyrmion_params(self, params: Dict[str, Any]) -> None:
-        """Validate skyrmion device specific parameters.""" 
+        """Validate skyrmion device specific parameters."""
         # Similar validation for skyrmion devices
         pass
 

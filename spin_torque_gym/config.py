@@ -4,14 +4,14 @@ This module provides centralized configuration management with support for
 environment variables, JSON/YAML config files, and runtime parameter overrides.
 """
 
-import os
 import json
-import yaml
 import logging
+import os
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Optional, Union, List
-from dataclasses import dataclass, field, asdict
-import numpy as np
+from typing import Any, Dict, Optional, Union
+
+import yaml
 
 
 @dataclass
@@ -27,7 +27,7 @@ class PhysicsConfig:
     random_seed: Optional[int] = None
 
 
-@dataclass  
+@dataclass
 class DeviceConfig:
     """Device configuration."""
     device_type: str = 'stt_mram'
@@ -98,7 +98,7 @@ class SpinTorqueConfig:
     compute: ComputeConfig = field(default_factory=ComputeConfig)
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     visualization: VisualizationConfig = field(default_factory=VisualizationConfig)
-    
+
     # Global settings
     debug_mode: bool = False
     strict_mode: bool = False
@@ -107,7 +107,7 @@ class SpinTorqueConfig:
 
 class ConfigManager:
     """Configuration manager with multiple source support."""
-    
+
     def __init__(self, config_path: Optional[Union[str, Path]] = None):
         """Initialize configuration manager.
         
@@ -117,24 +117,24 @@ class ConfigManager:
         self.config_path = Path(config_path) if config_path else None
         self.config = SpinTorqueConfig()
         self._env_prefix = 'SPIN_TORQUE_'
-        
+
         # Load configuration from multiple sources
         self._load_config()
-    
+
     def _load_config(self) -> None:
         """Load configuration from all sources in priority order."""
         # 1. Load defaults (already in dataclass)
-        
+
         # 2. Load from config file if provided
         if self.config_path and self.config_path.exists():
             self._load_from_file(self.config_path)
-        
+
         # 3. Load from environment variables (highest priority)
         self._load_from_env()
-        
+
         # 4. Validate configuration
         self._validate_config()
-    
+
     def _load_from_file(self, config_path: Path) -> None:
         """Load configuration from JSON or YAML file."""
         try:
@@ -145,13 +145,13 @@ class ConfigManager:
                     data = json.load(f)
                 else:
                     raise ValueError(f"Unsupported config file format: {config_path.suffix}")
-            
+
             # Update configuration with file data
             self._update_config_from_dict(data)
-            
+
         except Exception as e:
             logging.warning(f"Failed to load config from {config_path}: {e}")
-    
+
     def _load_from_env(self) -> None:
         """Load configuration from environment variables."""
         env_mappings = {
@@ -164,7 +164,7 @@ class ConfigManager:
             f'{self._env_prefix}INCLUDE_THERMAL': ('physics', 'include_thermal', self._parse_bool),
             f'{self._env_prefix}INCLUDE_QUANTUM': ('physics', 'include_quantum', self._parse_bool),
             f'{self._env_prefix}SEED': ('physics', 'random_seed', int),
-            
+
             # Device config
             f'{self._env_prefix}DEVICE_TYPE': ('device', 'device_type', str),
             f'{self._env_prefix}VOLUME': ('device', 'volume', float),
@@ -172,22 +172,22 @@ class ConfigManager:
             f'{self._env_prefix}DAMPING': ('device', 'damping', float),
             f'{self._env_prefix}ANISOTROPY': ('device', 'uniaxial_anisotropy', float),
             f'{self._env_prefix}POLARIZATION': ('device', 'polarization', float),
-            
-            # Training config  
+
+            # Training config
             f'{self._env_prefix}MAX_STEPS': ('training', 'max_steps', int),
             f'{self._env_prefix}MAX_CURRENT': ('training', 'max_current', float),
             f'{self._env_prefix}MAX_DURATION': ('training', 'max_duration', float),
             f'{self._env_prefix}SUCCESS_THRESHOLD': ('training', 'success_threshold', float),
             f'{self._env_prefix}ACTION_MODE': ('training', 'action_mode', str),
             f'{self._env_prefix}OBSERVATION_MODE': ('training', 'observation_mode', str),
-            
+
             # Compute config
             f'{self._env_prefix}USE_JAX': ('compute', 'use_jax', self._parse_bool),
             f'{self._env_prefix}GPU_DEVICE': ('compute', 'gpu_device', int),
             f'{self._env_prefix}NUM_CORES': ('compute', 'num_cores', int),
             f'{self._env_prefix}MEMORY_LIMIT_GB': ('compute', 'memory_limit_gb', float),
             f'{self._env_prefix}ENABLE_PROFILING': ('compute', 'enable_profiling', self._parse_bool),
-            
+
             # Logging config
             f'{self._env_prefix}LOG_LEVEL': ('logging', 'log_level', str),
             f'{self._env_prefix}LOG_DIR': ('logging', 'log_dir', str),
@@ -197,20 +197,20 @@ class ConfigManager:
             f'{self._env_prefix}EPISODE_DIR': ('logging', 'episode_dir', str),
             f'{self._env_prefix}WANDB_PROJECT': ('logging', 'wandb_project', str),
             f'{self._env_prefix}MLFLOW_URI': ('logging', 'mlflow_uri', str),
-            
+
             # Visualization config
             f'{self._env_prefix}RENDER_MODE': ('visualization', 'render_mode', str),
             f'{self._env_prefix}ANIMATION_FPS': ('visualization', 'animation_fps', int),
             f'{self._env_prefix}SAVE_ANIMATIONS': ('visualization', 'save_animations', self._parse_bool),
             f'{self._env_prefix}MPL_BACKEND': ('visualization', 'matplotlib_backend', str),
             f'{self._env_prefix}VIZ_OUTPUT_DIR': ('visualization', 'output_dir', str),
-            
+
             # Global settings
             f'{self._env_prefix}DEBUG_MODE': ('debug_mode', bool),
-            f'{self._env_prefix}STRICT_MODE': ('strict_mode', bool), 
+            f'{self._env_prefix}STRICT_MODE': ('strict_mode', bool),
             f'{self._env_prefix}SAFE_MODE': ('safe_mode', bool),
         }
-        
+
         for env_var, (section, key, dtype) in env_mappings.items():
             value = os.getenv(env_var)
             if value is not None:
@@ -225,17 +225,17 @@ class ConfigManager:
                         setattr(self.config, section, parsed_value)
                 except (ValueError, TypeError) as e:
                     logging.warning(f"Invalid value for {env_var}: {value} ({e})")
-    
+
     def _parse_bool(self, value: str) -> bool:
         """Parse boolean from string."""
         return value.lower() in ('true', '1', 'yes', 'on', 'enabled')
-    
+
     def _update_config_from_dict(self, data: Dict[str, Any]) -> None:
         """Update configuration from dictionary data."""
         for section_name, section_data in data.items():
             if hasattr(self.config, section_name):
                 section_obj = getattr(self.config, section_name)
-                
+
                 # Update section attributes
                 if isinstance(section_data, dict):
                     for key, value in section_data.items():
@@ -247,7 +247,7 @@ class ConfigManager:
                 else:
                     # Direct assignment for non-nested configs
                     setattr(self.config, section_name, section_data)
-    
+
     def _validate_config(self) -> None:
         """Validate configuration values."""
         # Physics validation
@@ -255,7 +255,7 @@ class ConfigManager:
             raise ValueError("Temperature must be positive")
         if self.config.physics.solver_rtol <= 0 or self.config.physics.solver_atol <= 0:
             raise ValueError("Solver tolerances must be positive")
-        
+
         # Device validation
         if self.config.device.volume <= 0:
             raise ValueError("Device volume must be positive")
@@ -265,7 +265,7 @@ class ConfigManager:
             raise ValueError("Damping must be between 0 and 1")
         if not 0 <= self.config.device.polarization <= 1:
             raise ValueError("Polarization must be between 0 and 1")
-        
+
         # Training validation
         if self.config.training.max_steps <= 0:
             raise ValueError("Max steps must be positive")
@@ -275,7 +275,7 @@ class ConfigManager:
             raise ValueError("Max duration must be positive")
         if not 0 <= self.config.training.success_threshold <= 1:
             raise ValueError("Success threshold must be between 0 and 1")
-        
+
         # Create directories if they don't exist
         for dir_path in [
             self.config.logging.log_dir,
@@ -284,17 +284,17 @@ class ConfigManager:
             self.config.visualization.output_dir
         ]:
             Path(dir_path).mkdir(parents=True, exist_ok=True)
-    
+
     def get_config(self) -> SpinTorqueConfig:
         """Get the complete configuration object."""
         return self.config
-    
+
     def get_section(self, section_name: str) -> Any:
         """Get a specific configuration section."""
         if not hasattr(self.config, section_name):
             raise ValueError(f"Unknown config section: {section_name}")
         return getattr(self.config, section_name)
-    
+
     def update_config(
         self,
         updates: Dict[str, Any],
@@ -307,10 +307,10 @@ class ConfigManager:
             validate: Whether to validate after updates
         """
         self._update_config_from_dict(updates)
-        
+
         if validate:
             self._validate_config()
-    
+
     def save_config(self, output_path: Union[str, Path]) -> None:
         """Save current configuration to file.
         
@@ -318,10 +318,10 @@ class ConfigManager:
             output_path: Path to save configuration
         """
         output_path = Path(output_path)
-        
+
         # Convert config to dictionary
         config_dict = asdict(self.config)
-        
+
         # Save based on file extension
         with open(output_path, 'w') as f:
             if output_path.suffix.lower() in ['.yml', '.yaml']:
@@ -330,15 +330,15 @@ class ConfigManager:
                 json.dump(config_dict, f, indent=2, default=str)
             else:
                 raise ValueError(f"Unsupported output format: {output_path.suffix}")
-    
+
     def to_dict(self) -> Dict[str, Any]:
         """Convert configuration to dictionary."""
         return asdict(self.config)
-    
+
     def __repr__(self) -> str:
         """String representation."""
         return f"ConfigManager(config_path={self.config_path})"
-    
+
     def __str__(self) -> str:
         """Human-readable string representation."""
         return f"SpinTorque Configuration:\n{yaml.dump(asdict(self.config), default_flow_style=False)}"
@@ -358,10 +358,10 @@ def get_config(config_path: Optional[Union[str, Path]] = None) -> SpinTorqueConf
         Configuration object
     """
     global _config_manager
-    
+
     if _config_manager is None:
         _config_manager = ConfigManager(config_path)
-    
+
     return _config_manager.get_config()
 
 
@@ -372,10 +372,10 @@ def update_config(updates: Dict[str, Any]) -> None:
         updates: Configuration updates
     """
     global _config_manager
-    
+
     if _config_manager is None:
         _config_manager = ConfigManager()
-    
+
     _config_manager.update_config(updates)
 
 
@@ -407,7 +407,7 @@ def get_compute_config() -> ComputeConfig:
 
 
 def get_logging_config() -> LoggingConfig:
-    """Get logging configuration.""" 
+    """Get logging configuration."""
     return get_config().logging
 
 

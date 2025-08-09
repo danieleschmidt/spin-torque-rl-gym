@@ -5,15 +5,15 @@ devices, enabling training of agents for crossbar array manipulation and
 pattern programming applications.
 """
 
-import gymnasium as gym
-from gymnasium import spaces
-import numpy as np
-from typing import Dict, Any, Optional, Tuple, Union, List
 import warnings
+from typing import Any, Dict, List, Optional, Tuple, Union
 
-from .spin_torque_env import SpinTorqueEnv
-from ..physics import LLGSSolver, ThermalFluctuations
+import gymnasium as gym
+import numpy as np
+from gymnasium import spaces
+
 from ..devices import DeviceFactory
+from ..physics import LLGSSolver, ThermalFluctuations
 from ..rewards import CompositeReward
 
 
@@ -24,9 +24,9 @@ class SpinTorqueArrayEnv(gym.Env):
     of spintronic devices for applications like neuromorphic computing,
     in-memory computing, and pattern storage.
     """
-    
+
     metadata = {'render_modes': ['human', 'rgb_array'], 'render_fps': 10}
-    
+
     def __init__(
         self,
         array_size: Tuple[int, int] = (4, 4),
@@ -73,13 +73,13 @@ class SpinTorqueArrayEnv(gym.Env):
             seed: Random seed
         """
         super().__init__()
-        
+
         # Array configuration
         self.array_size = array_size
         self.n_rows, self.n_cols = array_size
         self.n_devices = self.n_rows * self.n_cols
         self.device_type = device_type
-        
+
         # Environment parameters
         self.max_steps = max_steps
         self.max_current = max_current
@@ -94,11 +94,11 @@ class SpinTorqueArrayEnv(gym.Env):
         self.success_threshold = success_threshold
         self.energy_penalty_weight = energy_penalty_weight
         self.render_mode = render_mode
-        
+
         # Initialize random number generator
         self._np_random = None
         self.seed(seed)
-        
+
         # Initialize physics components
         self.solver = LLGSSolver(method='RK45', rtol=1e-6, atol=1e-9)
         self.thermal_model = ThermalFluctuations(
@@ -106,17 +106,17 @@ class SpinTorqueArrayEnv(gym.Env):
             correlation_time=1e-12,
             seed=seed
         )
-        
+
         # Initialize device array
         device_factory = DeviceFactory()
         if device_params is None:
             device_params = self._get_default_device_params()
-        
+
         self.devices = []
         for i in range(self.n_devices):
             device = device_factory.create_device(device_type, device_params)
             self.devices.append(device)
-        
+
         # Set target pattern
         if target_pattern is None:
             # Default checkerboard pattern
@@ -125,31 +125,31 @@ class SpinTorqueArrayEnv(gym.Env):
             if target_pattern.shape != (self.n_rows, self.n_cols, 3):
                 raise ValueError(f"Target pattern shape must be {(self.n_rows, self.n_cols, 3)}")
             self.target_pattern = target_pattern.copy()
-        
+
         # Initialize reward function
         if reward_components is None:
             reward_components = self._get_default_reward_components()
         self.reward_function = CompositeReward(reward_components)
-        
+
         # Setup action and observation spaces
         self._setup_action_space()
         self._setup_observation_space()
-        
+
         # Environment state
         self.current_pattern = None
         self.step_count = 0
         self.total_energy = 0.0
         self.episode_history = []
-        
+
         # Coupling matrix for inter-device interactions
         if self.include_coupling:
             self.coupling_matrix = self._compute_coupling_matrix()
-        
+
         # Rendering
         self.renderer = None
         if render_mode == 'human':
             self._init_renderer()
-    
+
     def _get_default_device_params(self) -> Dict[str, Any]:
         """Get default device parameters."""
         return {
@@ -167,7 +167,7 @@ class SpinTorqueArrayEnv(gym.Env):
             'easy_axis': np.array([0, 0, 1]),
             'reference_magnetization': np.array([0, 0, 1])
         }
-    
+
     def _generate_checkerboard_pattern(self) -> np.ndarray:
         """Generate default checkerboard magnetization pattern."""
         pattern = np.zeros((self.n_rows, self.n_cols, 3))
@@ -178,7 +178,7 @@ class SpinTorqueArrayEnv(gym.Env):
                 else:
                     pattern[i, j] = [0, 0, -1]  # -z
         return pattern
-    
+
     def _get_default_reward_components(self) -> Dict[str, Dict]:
         """Get default reward function components."""
         return {
@@ -188,7 +188,7 @@ class SpinTorqueArrayEnv(gym.Env):
             },
             'energy': {
                 'weight': -self.energy_penalty_weight,
-                'function': lambda obs, action, next_obs, info: 
+                'function': lambda obs, action, next_obs, info:
                     -info.get('step_energy', 0.0) / 1e-12
             },
             'progress': {
@@ -201,7 +201,7 @@ class SpinTorqueArrayEnv(gym.Env):
                 'function': self._uniformity_reward
             }
         }
-    
+
     def _pattern_match_reward(self, obs, action, next_obs, info) -> float:
         """Reward for matching target pattern."""
         if info.get('is_success', False):
@@ -210,16 +210,16 @@ class SpinTorqueArrayEnv(gym.Env):
             # Partial reward based on pattern similarity
             similarity = info.get('pattern_similarity', 0.0)
             return similarity * 5.0
-    
+
     def _uniformity_reward(self, obs, action, next_obs, info) -> float:
         """Reward for uniform magnetization magnitudes."""
         if self.current_pattern is None:
             return 0.0
-        
+
         magnitudes = np.linalg.norm(self.current_pattern, axis=2)
         uniformity = 1.0 - np.std(magnitudes)
         return max(0, uniformity)
-    
+
     def _setup_action_space(self):
         """Setup action space based on action mode."""
         if self.action_mode == 'individual':
@@ -252,7 +252,7 @@ class SpinTorqueArrayEnv(gym.Env):
             )
         else:
             raise ValueError(f"Unknown action mode: {self.action_mode}")
-    
+
     def _setup_observation_space(self):
         """Setup observation space based on observation mode."""
         if self.observation_mode == 'array':
@@ -285,23 +285,23 @@ class SpinTorqueArrayEnv(gym.Env):
             })
         else:
             raise ValueError(f"Unknown observation mode: {self.observation_mode}")
-    
+
     def _compute_coupling_matrix(self) -> np.ndarray:
         """Compute coupling matrix between devices based on coupling type."""
         coupling_matrix = np.zeros((self.n_devices, self.n_devices))
-        
+
         for i in range(self.n_devices):
             for j in range(self.n_devices):
                 if i == j:
                     continue
-                
+
                 # Get device positions
                 i_row, i_col = divmod(i, self.n_cols)
                 j_row, j_col = divmod(j, self.n_cols)
-                
+
                 # Calculate distance
                 distance = np.sqrt((i_row - j_row)**2 + (i_col - j_col)**2)
-                
+
                 if self.coupling_type == 'dipolar':
                     # Dipolar coupling: 1/r³
                     if distance > 0:
@@ -314,9 +314,9 @@ class SpinTorqueArrayEnv(gym.Env):
                     # Stray field coupling: 1/r²
                     if distance > 0:
                         coupling_matrix[i, j] = self.coupling_strength / (distance**2)
-        
+
         return coupling_matrix
-    
+
     def reset(
         self,
         seed: Optional[int] = None,
@@ -324,15 +324,15 @@ class SpinTorqueArrayEnv(gym.Env):
     ) -> Tuple[Union[np.ndarray, Dict], Dict[str, Any]]:
         """Reset environment to initial state."""
         super().reset(seed=seed)
-        
+
         if options is None:
             options = {}
-        
+
         # Reset environment state
         self.step_count = 0
         self.total_energy = 0.0
         self.episode_history = []
-        
+
         # Set initial pattern
         if 'initial_pattern' in options:
             self.current_pattern = options['initial_pattern'].copy()
@@ -345,16 +345,16 @@ class SpinTorqueArrayEnv(gym.Env):
                     random_m = self._np_random.normal(0, 1, 3)
                     random_m = random_m / np.linalg.norm(random_m)
                     self.current_pattern[i, j] = random_m
-        
+
         # Set target pattern
         if 'target_pattern' in options:
             self.target_pattern = options['target_pattern'].copy()
-        
+
         observation = self._get_observation()
         info = self._get_info()
-        
+
         return observation, info
-    
+
     def step(
         self,
         action: Union[np.ndarray, int]
@@ -362,38 +362,38 @@ class SpinTorqueArrayEnv(gym.Env):
         """Execute one environment step."""
         if self.current_pattern is None:
             raise RuntimeError("Environment must be reset before calling step")
-        
+
         # Store previous state for reward calculation
         prev_pattern = self.current_pattern.copy()
         prev_similarity = self._compute_pattern_similarity(prev_pattern)
-        
+
         # Parse and apply action
         step_info = self._apply_action(action)
-        
+
         # Update state
         self.total_energy += step_info['energy_consumed']
         self.step_count += 1
-        
+
         # Calculate reward
         current_similarity = self._compute_pattern_similarity(self.current_pattern)
         pattern_improvement = current_similarity - prev_similarity
-        
+
         is_success = current_similarity >= self.success_threshold
-        
+
         reward_info = {
             'is_success': is_success,
             'step_energy': step_info['energy_consumed'],
             'pattern_improvement': pattern_improvement,
             'pattern_similarity': current_similarity
         }
-        
+
         observation = self._get_observation()
         reward = self.reward_function.compute(None, action, observation, reward_info)
-        
+
         # Check termination conditions
         terminated = is_success
         truncated = self.step_count >= self.max_steps
-        
+
         # Store step in history
         self.episode_history.append({
             'step': self.step_count,
@@ -403,59 +403,59 @@ class SpinTorqueArrayEnv(gym.Env):
             'energy': step_info['energy_consumed'],
             'similarity': current_similarity
         })
-        
+
         info = self._get_info()
         info.update(step_info)
         info.update(reward_info)
-        
+
         return observation, reward, terminated, truncated, info
-    
+
     def _apply_action(self, action: Union[np.ndarray, int]) -> Dict[str, Any]:
         """Apply action to the device array."""
         current_density = float(action[1]) if len(action) > 1 else 0.0
         pulse_duration = float(action[2]) if len(action) > 2 else 1e-9
-        
+
         # Clip to valid ranges
         current_density = np.clip(current_density, -self.max_current, self.max_current)
         pulse_duration = np.clip(pulse_duration, 1e-12, self.max_duration)
-        
+
         total_energy = 0.0
         affected_devices = []
-        
+
         if self.action_mode == 'individual':
             # Apply to single device
             device_idx = int(np.clip(action[0], 0, self.n_devices - 1))
             affected_devices = [device_idx]
-            
+
         elif self.action_mode == 'row':
             # Apply to entire row
             row_idx = int(np.clip(action[0], 0, self.n_rows - 1))
             affected_devices = list(range(row_idx * self.n_cols, (row_idx + 1) * self.n_cols))
-            
+
         elif self.action_mode == 'column':
             # Apply to entire column
             col_idx = int(np.clip(action[0], 0, self.n_cols - 1))
             affected_devices = list(range(col_idx, self.n_devices, self.n_cols))
-            
+
         elif self.action_mode == 'global':
             # Apply to all devices
             affected_devices = list(range(self.n_devices))
-        
+
         # Apply dynamics to affected devices
         for device_idx in affected_devices:
             row_idx, col_idx = divmod(device_idx, self.n_cols)
             current_m = self.current_pattern[row_idx, col_idx]
-            
+
             # Compute effective field including coupling
             h_eff = self._compute_effective_field(device_idx, current_m)
-            
+
             # Simulate dynamics
             try:
                 final_m = self._simulate_device_dynamics(
                     current_m, current_density, pulse_duration, h_eff
                 )
                 self.current_pattern[row_idx, col_idx] = final_m
-                
+
                 # Calculate energy consumed
                 device = self.devices[device_idx]
                 resistance = device.compute_resistance(current_m)
@@ -464,24 +464,24 @@ class SpinTorqueArrayEnv(gym.Env):
                     voltage = current_density * resistance * area
                     energy = voltage**2 / resistance * pulse_duration
                     total_energy += energy
-                    
+
             except Exception as e:
                 warnings.warn(f"Error simulating device {device_idx}: {e}")
-        
+
         return {
             'energy_consumed': total_energy,
             'affected_devices': affected_devices,
             'current_density': current_density,
             'pulse_duration': pulse_duration
         }
-    
+
     def _compute_effective_field(self, device_idx: int, magnetization: np.ndarray) -> np.ndarray:
         """Compute effective field for a device including coupling effects."""
         device = self.devices[device_idx]
-        
+
         # Intrinsic effective field (anisotropy, thermal, etc.)
         h_intrinsic = device.compute_effective_field(magnetization, np.zeros(3))
-        
+
         # Coupling field from other devices
         h_coupling = np.zeros(3)
         if self.include_coupling:
@@ -491,9 +491,9 @@ class SpinTorqueArrayEnv(gym.Env):
                     j_magnetization = self.current_pattern[j_row, j_col]
                     coupling_strength = self.coupling_matrix[device_idx, j]
                     h_coupling += coupling_strength * j_magnetization
-        
+
         return h_intrinsic + h_coupling
-    
+
     def _simulate_device_dynamics(
         self,
         m_initial: np.ndarray,
@@ -504,32 +504,32 @@ class SpinTorqueArrayEnv(gym.Env):
         """Simulate dynamics for a single device."""
         # Simplified dynamics simulation
         # In practice, this would use the full LLGS solver
-        
+
         # Apply torque from current
         if abs(current_density) > 1e-12:
             # Simplified STT torque
             p_hat = np.array([0, 0, 1])  # Reference direction
             tau_stt = 0.1 * current_density * np.cross(m_initial, np.cross(m_initial, p_hat))
-            
+
             # Simple integration
             alpha = 0.01  # Damping
             gamma = 2.21e5  # Gyromagnetic ratio
-            
+
             dm_dt = -gamma * np.cross(m_initial, h_effective)
             dm_dt += alpha * np.cross(m_initial, dm_dt)
             dm_dt += tau_stt
-            
+
             # Euler integration (simplified)
             dt = pulse_duration / 10  # Sub-steps
             m = m_initial.copy()
             for _ in range(10):
                 m += dm_dt * dt
                 m = m / np.linalg.norm(m)  # Normalize
-            
+
             return m
         else:
             return m_initial
-    
+
     def _compute_pattern_similarity(self, pattern: np.ndarray) -> float:
         """Compute similarity between current and target patterns."""
         similarities = []
@@ -537,9 +537,9 @@ class SpinTorqueArrayEnv(gym.Env):
             for j in range(self.n_cols):
                 dot_product = np.dot(pattern[i, j], self.target_pattern[i, j])
                 similarities.append(dot_product)
-        
+
         return np.mean(similarities)
-    
+
     def _get_observation(self) -> Union[np.ndarray, Dict]:
         """Get current observation."""
         if self.observation_mode == 'array':
@@ -549,26 +549,26 @@ class SpinTorqueArrayEnv(gym.Env):
                 self.target_pattern
             ], axis=2)
             return obs.astype(np.float32)
-            
+
         elif self.observation_mode == 'vector':
             # Flatten everything into a vector
             current_flat = self.current_pattern.flatten()
             target_flat = self.target_pattern.flatten()
-            
+
             similarity = self._compute_pattern_similarity(self.current_pattern)
             steps_remaining_norm = (self.max_steps - self.step_count) / self.max_steps
             energy_norm = self.total_energy / 1e-12
-            
+
             obs = np.concatenate([
                 current_flat,
                 target_flat,
                 [similarity, steps_remaining_norm, energy_norm, self.temperature / 300.0]
             ])
             return obs.astype(np.float32)
-            
+
         elif self.observation_mode == 'dict':
             similarity = self._compute_pattern_similarity(self.current_pattern)
-            
+
             return {
                 'current_pattern': self.current_pattern.astype(np.float32),
                 'target_pattern': self.target_pattern.astype(np.float32),
@@ -576,11 +576,11 @@ class SpinTorqueArrayEnv(gym.Env):
                 'steps_remaining': np.array([self.max_steps - self.step_count], dtype=int),
                 'total_energy': np.array([self.total_energy], dtype=np.float32)
             }
-    
+
     def _get_info(self) -> Dict[str, Any]:
         """Get info dictionary."""
         similarity = self._compute_pattern_similarity(self.current_pattern)
-        
+
         return {
             'step_count': self.step_count,
             'total_energy': self.total_energy,
@@ -590,12 +590,12 @@ class SpinTorqueArrayEnv(gym.Env):
             'device_type': self.device_type,
             'episode_history': self.episode_history.copy()
         }
-    
+
     def render(self, mode: Optional[str] = None):
         """Render the environment."""
         if mode is None:
             mode = self.render_mode
-        
+
         if mode == 'human':
             self._render_human()
         elif mode == 'rgb_array':
@@ -604,35 +604,35 @@ class SpinTorqueArrayEnv(gym.Env):
             return
         else:
             raise ValueError(f"Unsupported render mode: {mode}")
-    
+
     def _init_renderer(self):
         """Initialize renderer for human mode."""
         try:
             import matplotlib.pyplot as plt
-            
-            self.fig, ((self.ax_current, self.ax_target), 
+
+            self.fig, ((self.ax_current, self.ax_target),
                       (self.ax_similarity, self.ax_energy)) = plt.subplots(2, 2, figsize=(12, 8))
             plt.ion()
             self.renderer = True
-            
+
         except ImportError:
             warnings.warn("Matplotlib not available, rendering disabled")
             self.renderer = None
-    
+
     def _render_human(self):
         """Render for human viewing."""
         if self.renderer is None:
             return
-        
+
         try:
             import matplotlib.pyplot as plt
-            
+
             # Clear axes
             self.ax_current.clear()
             self.ax_target.clear()
             self.ax_similarity.clear()
             self.ax_energy.clear()
-            
+
             # Plot current pattern (z-component)
             current_z = self.current_pattern[:, :, 2]
             im1 = self.ax_current.imshow(current_z, cmap='RdBu', vmin=-1, vmax=1)
@@ -640,7 +640,7 @@ class SpinTorqueArrayEnv(gym.Env):
             self.ax_current.set_xlabel('Column')
             self.ax_current.set_ylabel('Row')
             plt.colorbar(im1, ax=self.ax_current)
-            
+
             # Plot target pattern (z-component)
             target_z = self.target_pattern[:, :, 2]
             im2 = self.ax_target.imshow(target_z, cmap='RdBu', vmin=-1, vmax=1)
@@ -648,13 +648,13 @@ class SpinTorqueArrayEnv(gym.Env):
             self.ax_target.set_xlabel('Column')
             self.ax_target.set_ylabel('Row')
             plt.colorbar(im2, ax=self.ax_target)
-            
+
             # Plot similarity history
             if self.episode_history:
                 steps = [h['step'] for h in self.episode_history]
                 similarities = [h['similarity'] for h in self.episode_history]
                 energies = [h['energy'] for h in self.episode_history]
-                
+
                 self.ax_similarity.plot(steps, similarities, 'b-', label='Similarity')
                 self.ax_similarity.axhline(y=self.success_threshold, color='r', linestyle='--', label='Success threshold')
                 self.ax_similarity.set_xlabel('Step')
@@ -662,61 +662,61 @@ class SpinTorqueArrayEnv(gym.Env):
                 self.ax_similarity.set_title('Pattern Similarity Progress')
                 self.ax_similarity.legend()
                 self.ax_similarity.set_ylim([0, 1])
-                
+
                 self.ax_energy.plot(steps, energies, 'g-')
                 self.ax_energy.set_xlabel('Step')
                 self.ax_energy.set_ylabel('Energy (J)')
                 self.ax_energy.set_title('Energy Consumption per Step')
-            
+
             plt.tight_layout()
             plt.draw()
             plt.pause(0.01)
-            
+
         except Exception as e:
             warnings.warn(f"Rendering error: {e}")
-    
+
     def _render_rgb_array(self) -> np.ndarray:
         """Render as RGB array."""
         import matplotlib.pyplot as plt
-        
+
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(10, 4))
-        
+
         # Plot current and target patterns
         current_z = self.current_pattern[:, :, 2]
         target_z = self.target_pattern[:, :, 2]
-        
+
         im1 = ax1.imshow(current_z, cmap='RdBu', vmin=-1, vmax=1)
         ax1.set_title('Current Pattern')
         plt.colorbar(im1, ax=ax1)
-        
+
         im2 = ax2.imshow(target_z, cmap='RdBu', vmin=-1, vmax=1)
         ax2.set_title('Target Pattern')
         plt.colorbar(im2, ax=ax2)
-        
+
         similarity = self._compute_pattern_similarity(self.current_pattern)
         fig.suptitle(f'Step {self.step_count}: Similarity = {similarity:.3f}')
-        
+
         # Convert to RGB array
         fig.canvas.draw()
         rgb_array = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
         rgb_array = rgb_array.reshape(fig.canvas.get_width_height()[::-1] + (3,))
-        
+
         plt.close(fig)
         return rgb_array
-    
+
     def close(self):
         """Close environment and cleanup."""
         if hasattr(self, 'fig'):
             import matplotlib.pyplot as plt
             plt.close(self.fig)
-        
+
         self.renderer = None
-    
+
     def seed(self, seed: Optional[int] = None) -> List[int]:
         """Set random seed."""
         self._np_random, seed = gym.utils.seeding.np_random(seed)
         return [seed]
-    
+
     def get_array_info(self) -> Dict[str, Any]:
         """Get array configuration information."""
         return {
@@ -728,22 +728,22 @@ class SpinTorqueArrayEnv(gym.Env):
             'coupling_type': self.coupling_type,
             'coupling_strength': self.coupling_strength
         }
-    
+
     def set_target_pattern(self, pattern: np.ndarray):
         """Set new target pattern."""
         if pattern.shape != (self.n_rows, self.n_cols, 3):
             raise ValueError(f"Pattern shape must be {(self.n_rows, self.n_cols, 3)}")
         self.target_pattern = pattern.copy()
-    
+
     def analyze_episode(self) -> Dict[str, Any]:
         """Analyze completed episode."""
         if not self.episode_history:
             return {}
-        
+
         total_energy = sum(h['energy'] for h in self.episode_history)
         final_similarity = self.episode_history[-1]['similarity']
         success = final_similarity >= self.success_threshold
-        
+
         return {
             'episode_length': len(self.episode_history),
             'total_energy': total_energy,
