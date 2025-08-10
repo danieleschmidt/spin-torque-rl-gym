@@ -6,6 +6,8 @@ of spintronic devices with standardized interfaces.
 
 from typing import Any, Dict, Type
 
+import numpy as np
+
 from .base_device import BaseSpintronicDevice
 from .skyrmion_device import SkyrmionDevice
 from .sot_mram import SOTMRAMDevice
@@ -137,8 +139,8 @@ class DeviceFactory:
                 'polarization': 0.7,
                 'resistance_parallel': 1e3,  # Ω
                 'resistance_antiparallel': 2e3,  # Ω
-                'easy_axis': [0, 0, 1],
-                'reference_magnetization': [0, 0, 1]
+                'easy_axis': np.array([0, 0, 1]),
+                'reference_magnetization': np.array([0, 0, 1])
             }
         elif device_type == 'sot_mram':
             return {
@@ -152,7 +154,7 @@ class DeviceFactory:
                 'spin_hall_angle': 0.2,
                 'resistance_parallel': 500,
                 'resistance_antiparallel': 1000,
-                'easy_axis': [0, 0, 1]
+                'easy_axis': np.array([0, 0, 1])
             }
         elif device_type == 'vcma_mram':
             return {
@@ -166,7 +168,7 @@ class DeviceFactory:
                 'vcma_coefficient': 100e-6,  # J/V·m
                 'resistance_parallel': 2e3,
                 'resistance_antiparallel': 4e3,
-                'easy_axis': [0, 0, 1]
+                'easy_axis': np.array([0, 0, 1])
             }
         elif device_type == 'skyrmion':
             return {
@@ -178,7 +180,7 @@ class DeviceFactory:
                 'dmi_constant': 3e-3,  # J/m²
                 'exchange_constant': 15e-12,
                 'skyrmion_radius': 10e-9,
-                'easy_axis': [0, 0, 1]
+                'easy_axis': np.array([0, 0, 1])
             }
         else:
             # Generic parameters
