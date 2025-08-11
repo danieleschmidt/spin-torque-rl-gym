@@ -1,0 +1,154 @@
+{
+  "timestamp": 1754950178.5276656,
+  "deployment_ready": false,
+  "overall_score": 0.65,
+  "results": {
+    "Code Structure": {
+      "passed": true,
+      "score": 1.0,
+      "message": "All 38 files have valid syntax",
+      "details": {
+        "files_checked": 38,
+        "syntax_issues": 0,
+        "issues": []
+      },
+      "critical": true
+    },
+    "Core Imports": {
+      "passed": false,
+      "score": 0.0,
+      "message": "Import failures: spin_torque_gym, spin_torque_gym.devices.base_device, spin_torque_gym.devices.stt_mram",
+      "details": {
+        "total_imports": 14,
+        "passed_imports": 0,
+        "import_results": [
+          {
+            "module": "spin_torque_gym",
+            "passed": false,
+            "error": "No module named 'gymnasium'"
+          },
+          {
+            "module": "spin_torque_gym.devices.base_device",
+            "passed": false,
+            "error": "No module named 'gymnasium'"
+          },
+          {
+            "module": "spin_torque_gym.devices.stt_mram",
+            "passed": false,
+            "error": "No module named 'gymnasium'"
+          },
+          {
+            "module": "spin_torque_gym.devices.sot_mram",
+            "passed": false,
+            "error": "No module named 'gymnasium'"
+          },
+          {
+            "module": "spin_torque_gym.devices.vcma_mram",
+            "passed": false,
+            "error": "No module named 'gymnasium'"
+          },
+          {
+            "module": "spin_torque_gym.devices.skyrmion_device",
+            "passed": false,
+            "error": "No module named 'gymnasium'"
+          },
+          {
+            "module": "spin_torque_gym.devices.device_factory",
+            "passed": false,
+            "error": "No module named 'gymnasium'"
+          },
+          {
+            "module": "spin_torque_gym.physics.materials",
+            "passed": false,
+            "error": "No module named 'gymnasium'"
+          },
+          {
+            "module": "spin_torque_gym.physics.simple_solver",
+            "passed": false,
+            "error": "No module named 'gymnasium'"
+          },
+          {
+            "module": "spin_torque_gym.utils.cache",
+            "passed": false,
+            "error": "No module named 'gymnasium'"
+          },
+          {
+            "module": "spin_torque_gym.utils.performance",
+            "passed": false,
+            "error": "No module named 'gymnasium'"
+          },
+          {
+            "module": "spin_torque_gym.utils.error_handling",
+            "passed": false,
+            "error": "No module named 'gymnasium'"
+          },
+          {
+            "module": "spin_torque_gym.utils.security_validation",
+            "passed": false,
+            "error": "No module named 'gymnasium'"
+          },
+          {
+            "module": "spin_torque_gym.utils.advanced_monitoring",
+            "passed": false,
+            "error": "No module named 'gymnasium'"
+          }
+        ]
+      },
+      "critical": true
+    },
+    "Device Creation": {
+      "passed": false,
+      "score": 0.0,
+      "message": "Device creation failures: factory",
+      "details": {
+        "device_tests": [
+          {
+            "device_type": "factory",
+            "passed": false,
+            "error": "No module named 'gymnasium'"
+          }
+        ],
+        "available_devices": []
+      },
+      "critical": true
+    },
+    "Security": {
+      "passed": true,
+      "score": 0.9,
+      "message": "Security scan passed: 65 files checked",
+      "details": {
+        "files_scanned": 65,
+        "security_issues": [],
+        "warnings": [
+          "Security utilities test failed: No module named 'gymnasium'"
+        ]
+      },
+      "critical": true
+    },
+    "Documentation": {
+      "passed": true,
+      "score": 1.0,
+      "message": "Documentation: 19 doc files, 339/363 functions documented",
+      "details": {
+        "doc_files": 19,
+        "code_files": 38,
+        "total_functions": 363,
+        "documented_functions": 339,
+        "docstring_ratio": 0.9338842975206612
+      },
+      "critical": false
+    },
+    "File Structure": {
+      "passed": true,
+      "score": 1.0,
+      "message": "File structure: 7/7 key files present, 65 total Python files",
+      "details": {
+        "expected_files": 7,
+        "present_files": 7,
+        "missing_files": [],
+        "total_python_files": 65
+      },
+      "critical": false
+    }
+  }
+}
