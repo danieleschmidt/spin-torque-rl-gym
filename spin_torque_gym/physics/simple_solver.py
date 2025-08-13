@@ -27,7 +27,7 @@ class SimpleLLGSSolver:
         rtol: float = 1e-3,
         atol: float = 1e-6,
         max_step: float = 1e-12,
-        timeout: float = 1.0  # Maximum solve time in seconds
+        timeout: float = 2.0  # Maximum solve time in seconds
     ):
         """Initialize simplified LLGS solver.
         
