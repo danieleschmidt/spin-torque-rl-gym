@@ -13,7 +13,7 @@ class TestTrainingWorkflow:
         """Test basic RL training loop."""
         # This test would require the full environment implementation
         pytest.skip("Full environment implementation required")
-        
+
         # Placeholder structure for future implementation:
         # 1. Create environment
         # 2. Initialize RL agent
@@ -29,7 +29,7 @@ class TestTrainingWorkflow:
             {"thermal_stability": 60, "difficulty": "medium"},
             {"thermal_stability": 100, "difficulty": "hard"}
         ]
-        
+
         for stage in curriculum_stages:
             assert stage["thermal_stability"] > 0
             assert stage["difficulty"] in ["easy", "medium", "hard"]
@@ -43,7 +43,7 @@ class TestTrainingWorkflow:
             "polarization": (0.6, 0.8),  # ±14% variation
             "temperature": (250, 350)     # ±50K variation
         }
-        
+
         for param, (min_val, max_val) in param_ranges.items():
             assert min_val < max_val
             assert min_val > 0
@@ -71,7 +71,7 @@ class TestBenchmarkComparison:
                 "energy": 1.5e-12  # J
             }
         }
-        
+
         for protocol_name, protocol in experimental_protocols.items():
             assert protocol["current"] > 0
             assert protocol["duration"] > 0
@@ -86,7 +86,7 @@ class TestBenchmarkComparison:
             "optimized": 1e-12,     # J
             "theoretical_limit": 0.1e-12  # J
         }
-        
+
         # RL agent should achieve better than conventional
         rl_energy = 2e-12  # J (example)
         assert rl_energy < baseline_energies["conventional"]
@@ -100,7 +100,7 @@ class TestBenchmarkComparison:
             "fast_switching": 1e-9,  # s
             "ultrafast": 0.1e-9    # s
         }
-        
+
         # RL agent switching time
         rl_speed = 2e-9  # s (example)
         assert rl_speed < baseline_speeds["conventional"]
@@ -117,18 +117,18 @@ class TestScalabilityAndPerformance:
         timestep = 1e-12  # s
         simulation_time = 100e-9  # s
         num_steps = int(simulation_time / timestep)
-        
+
         # Performance requirements
         max_simulation_time = 60  # seconds
         steps_per_second = num_steps / max_simulation_time
-        
+
         assert steps_per_second > 1000  # Minimum performance requirement
 
     def test_multi_device_scaling(self):
         """Test multi-device simulation scaling."""
         # Array sizes to test
         array_sizes = [(2, 2), (4, 4), (8, 8)]
-        
+
         for size in array_sizes:
             num_devices = size[0] * size[1]
             # Simulation time should scale reasonably with device count
@@ -140,11 +140,11 @@ class TestScalabilityAndPerformance:
         # Memory requirements for different configurations
         single_device_memory = 100e6  # bytes (100 MB)
         array_4x4_memory = 16 * single_device_memory  # Linear scaling
-        
+
         # Memory usage should not exceed reasonable limits
         max_memory_gb = 32  # GB
         max_memory_bytes = max_memory_gb * 1e9
-        
+
         assert array_4x4_memory < max_memory_bytes
 
     def test_gpu_acceleration(self):
@@ -154,7 +154,7 @@ class TestScalabilityAndPerformance:
             import jax
             devices = jax.devices()
             has_gpu = any("gpu" in str(device).lower() for device in devices)
-            
+
             if has_gpu:
                 # GPU should provide speedup
                 gpu_speedup = 10  # Expected speedup factor
@@ -176,7 +176,7 @@ class TestVisualizationAndAnalysis:
         episodes = np.arange(1000)
         rewards = np.random.normal(0, 1, 1000).cumsum()  # Trending upward
         success_rates = np.minimum(np.maximum(0.1 + episodes * 0.0008, 0), 1)
-        
+
         # Check data quality
         assert len(episodes) == len(rewards) == len(success_rates)
         assert all(0 <= sr <= 1 for sr in success_rates)
@@ -187,13 +187,13 @@ class TestVisualizationAndAnalysis:
         # Mock trajectory data
         trajectory_length = 100
         trajectory = np.zeros((trajectory_length, 3))
-        
+
         # Interpolate from initial to target
         for i in range(trajectory_length):
             t = i / (trajectory_length - 1)
             trajectory[i] = (1 - t) * sample_magnetization + t * target_magnetization
             trajectory[i] = trajectory[i] / np.linalg.norm(trajectory[i])
-        
+
         # Validate trajectory properties
         assert trajectory.shape == (trajectory_length, 3)
         assert np.allclose(np.linalg.norm(trajectory, axis=1), 1.0)
@@ -205,15 +205,15 @@ class TestVisualizationAndAnalysis:
         # Create mock energy landscape
         theta_range = np.linspace(0, 2*np.pi, 100)
         phi_range = np.linspace(0, np.pi, 50)
-        
+
         # Simple uniaxial anisotropy: E = -K cos²(φ)
         k_u = 1e6  # J/m³
         volume = 50e-9 * 100e-9 * 2e-9  # m³
-        
+
         energy_landscape = np.zeros((len(phi_range), len(theta_range)))
         for i, phi in enumerate(phi_range):
             energy_landscape[i, :] = -k_u * volume * np.cos(phi)**2
-        
+
         # Validate energy landscape
         assert energy_landscape.shape == (len(phi_range), len(theta_range))
         assert np.min(energy_landscape) < np.max(energy_landscape)  # Non-trivial landscape
@@ -223,17 +223,17 @@ class TestVisualizationAndAnalysis:
         # Current and field ranges
         current_range = np.linspace(-3e6, 3e6, 50)  # A/cm²
         field_range = np.linspace(-200, 200, 40)    # mT
-        
+
         # Mock phase diagram (1 = switching, 0 = no switching)
         phase_diagram = np.zeros((len(field_range), len(current_range)))
-        
+
         for i, field in enumerate(field_range):
             for j, current in enumerate(current_range):
                 # Simple threshold model
                 effective_field = abs(field) + abs(current) * 1e-4  # Convert current to field
                 switching_threshold = 100  # mT
                 phase_diagram[i, j] = 1 if effective_field > switching_threshold else 0
-        
+
         # Validate phase diagram
         assert phase_diagram.shape == (len(field_range), len(current_range))
         assert np.any(phase_diagram == 1)  # Some switching regions

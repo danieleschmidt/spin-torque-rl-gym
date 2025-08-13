@@ -5,18 +5,17 @@ including physics simulation health, device state monitoring, and system health.
 """
 
 import time
-import warnings
-from collections import deque, defaultdict
-from typing import Any, Dict, List, Optional, Tuple, Union
+from collections import defaultdict, deque
+from typing import Any, Dict, Tuple
 
 import numpy as np
 
-from .logging_config import get_logger, PerformanceLogger
+from .logging_config import PerformanceLogger, get_logger
 
 
 class HealthCheck:
     """Base class for health checks."""
-    
+
     def __init__(self, name: str, warning_threshold: float = 0.8,
                  critical_threshold: float = 0.95):
         """Initialize health check.
@@ -33,7 +32,7 @@ class HealthCheck:
         self.status = "UNKNOWN"
         self.message = ""
         self.value = 0.0
-    
+
     def check(self) -> Tuple[str, float, str]:
         """Perform health check.
         
@@ -42,13 +41,13 @@ class HealthCheck:
         """
         self.last_check_time = time.time()
         status, value, message = self._perform_check()
-        
+
         self.status = status
         self.value = value
         self.message = message
-        
+
         return status, value, message
-    
+
     def _perform_check(self) -> Tuple[str, float, str]:
         """Override in subclasses."""
         raise NotImplementedError
@@ -56,7 +55,7 @@ class HealthCheck:
 
 class PhysicsHealthCheck(HealthCheck):
     """Health check for physics simulation."""
-    
+
     def __init__(self, solver_stats: Dict[str, Any]):
         """Initialize physics health check.
         
@@ -65,12 +64,12 @@ class PhysicsHealthCheck(HealthCheck):
         """
         super().__init__("Physics Simulation")
         self.solver_stats = solver_stats
-    
+
     def _perform_check(self) -> Tuple[str, float, str]:
         """Check physics simulation health."""
         issues = []
         score = 1.0
-        
+
         # Check solver timeout rate
         timeout_rate = self.solver_stats.get('timeout_rate', 0.0)
         if timeout_rate > 0.5:
@@ -79,7 +78,7 @@ class PhysicsHealthCheck(HealthCheck):
         elif timeout_rate > 0.1:
             score *= 0.7
             issues.append(f"Moderate timeout rate: {timeout_rate:.1%}")
-        
+
         # Check average solve time
         avg_solve_time = self.solver_stats.get('avg_solve_time', 0.0)
         if avg_solve_time > 1.0:
@@ -88,7 +87,7 @@ class PhysicsHealthCheck(HealthCheck):
         elif avg_solve_time > 0.1:
             score *= 0.8
             issues.append(f"Moderate solving speed: {avg_solve_time:.2f}s average")
-        
+
         # Check solve success rate
         solve_count = self.solver_stats.get('solve_count', 0)
         timeout_count = self.solver_stats.get('timeout_count', 0)
@@ -100,7 +99,7 @@ class PhysicsHealthCheck(HealthCheck):
             elif success_rate < 0.8:
                 score *= 0.6
                 issues.append(f"Moderate success rate: {success_rate:.1%}")
-        
+
         # Determine status
         if score >= self.critical_threshold:
             status = "HEALTHY"
@@ -111,13 +110,13 @@ class PhysicsHealthCheck(HealthCheck):
         else:
             status = "CRITICAL"
             message = f"Critical physics issues: {'; '.join(issues)}"
-        
+
         return status, score, message
 
 
 class DeviceHealthCheck(HealthCheck):
     """Health check for device models."""
-    
+
     def __init__(self, device_info: Dict[str, Any]):
         """Initialize device health check.
         
@@ -126,19 +125,19 @@ class DeviceHealthCheck(HealthCheck):
         """
         super().__init__("Device Models")
         self.device_info = device_info
-    
+
     def _perform_check(self) -> Tuple[str, float, str]:
         """Check device health."""
         issues = []
         score = 1.0
-        
+
         # Check for required parameters
         required_params = ['saturation_magnetization', 'volume', 'damping']
         for param in required_params:
             if param not in self.device_info:
                 score *= 0.5
                 issues.append(f"Missing parameter: {param}")
-        
+
         # Check parameter ranges
         if 'damping' in self.device_info:
             damping = self.device_info['damping']
@@ -148,7 +147,7 @@ class DeviceHealthCheck(HealthCheck):
             elif damping > 0.5:
                 score *= 0.8
                 issues.append(f"High damping: {damping}")
-        
+
         if 'saturation_magnetization' in self.device_info:
             ms = self.device_info['saturation_magnetization']
             if ms <= 0:
@@ -157,13 +156,13 @@ class DeviceHealthCheck(HealthCheck):
             elif ms > 5e6:  # Very high
                 score *= 0.9
                 issues.append(f"Very high Ms: {ms:.1e} A/m")
-        
+
         # Check device type consistency
         device_type = self.device_info.get('device_type', 'Unknown')
         if device_type == 'Unknown':
             score *= 0.7
             issues.append("Unknown device type")
-        
+
         # Determine status
         if score >= self.critical_threshold:
             status = "HEALTHY"
@@ -174,13 +173,13 @@ class DeviceHealthCheck(HealthCheck):
         else:
             status = "CRITICAL"
             message = f"Critical device issues: {'; '.join(issues)}"
-        
+
         return status, score, message
 
 
 class EnvironmentHealthCheck(HealthCheck):
     """Health check for RL environment."""
-    
+
     def __init__(self, env_stats: Dict[str, Any]):
         """Initialize environment health check.
         
@@ -191,7 +190,7 @@ class EnvironmentHealthCheck(HealthCheck):
         self.env_stats = env_stats
         self.reward_history = deque(maxlen=100)
         self.step_time_history = deque(maxlen=100)
-    
+
     def update_stats(self, reward: float, step_time: float) -> None:
         """Update running statistics.
         
@@ -201,12 +200,12 @@ class EnvironmentHealthCheck(HealthCheck):
         """
         self.reward_history.append(reward)
         self.step_time_history.append(step_time)
-    
+
     def _perform_check(self) -> Tuple[str, float, str]:
         """Check environment health."""
         issues = []
         score = 1.0
-        
+
         # Check step timing
         if self.step_time_history:
             avg_step_time = np.mean(self.step_time_history)
@@ -216,37 +215,37 @@ class EnvironmentHealthCheck(HealthCheck):
             elif avg_step_time > 0.1:
                 score *= 0.8
                 issues.append(f"Moderate step time: {avg_step_time:.2f}s")
-        
+
         # Check reward distribution
         if len(self.reward_history) > 10:
             rewards = np.array(self.reward_history)
-            
+
             # Check for stuck rewards
             if np.std(rewards) < 1e-10:
                 score *= 0.6
                 issues.append("Rewards not changing")
-            
+
             # Check for extreme rewards
             if np.any(np.abs(rewards) > 1e10):
                 score *= 0.3
                 issues.append("Extreme reward values detected")
-            
+
             # Check for NaN rewards
             if np.any(np.isnan(rewards)):
                 score *= 0.1
                 issues.append("NaN rewards detected")
-        
+
         # Check episode statistics
         total_episodes = self.env_stats.get('total_episodes', 0)
         if total_episodes == 0:
             score *= 0.8
             issues.append("No episodes completed")
-        
+
         success_rate = self.env_stats.get('success_rate', 0.0)
         if success_rate < 0.01:
             score *= 0.7
             issues.append(f"Low success rate: {success_rate:.1%}")
-        
+
         # Determine status
         if score >= self.critical_threshold:
             status = "HEALTHY"
@@ -257,26 +256,26 @@ class EnvironmentHealthCheck(HealthCheck):
         else:
             status = "CRITICAL"
             message = f"Critical environment issues: {'; '.join(issues)}"
-        
+
         return status, score, message
 
 
 class SystemHealthCheck(HealthCheck):
     """Health check for system resources."""
-    
+
     def __init__(self):
         """Initialize system health check."""
         super().__init__("System Resources")
         self.logger = get_logger("Health.System")
-    
+
     def _perform_check(self) -> Tuple[str, float, str]:
         """Check system health."""
         issues = []
         score = 1.0
-        
+
         try:
             import psutil
-            
+
             # Check CPU usage
             cpu_percent = psutil.cpu_percent(interval=0.1)
             if cpu_percent > 90:
@@ -285,7 +284,7 @@ class SystemHealthCheck(HealthCheck):
             elif cpu_percent > 70:
                 score *= 0.8
                 issues.append(f"Moderate CPU usage: {cpu_percent:.1f}%")
-            
+
             # Check memory usage
             memory = psutil.virtual_memory()
             if memory.percent > 90:
@@ -294,7 +293,7 @@ class SystemHealthCheck(HealthCheck):
             elif memory.percent > 70:
                 score *= 0.8
                 issues.append(f"Moderate memory usage: {memory.percent:.1f}%")
-            
+
             # Check disk usage
             disk = psutil.disk_usage('/')
             if disk.percent > 95:
@@ -303,14 +302,14 @@ class SystemHealthCheck(HealthCheck):
             elif disk.percent > 80:
                 score *= 0.9
                 issues.append(f"High disk usage: {disk.percent:.1f}%")
-            
+
         except ImportError:
             score *= 0.9
             issues.append("psutil not available for system monitoring")
         except Exception as e:
             score *= 0.7
             issues.append(f"System monitoring error: {e}")
-        
+
         # Determine status
         if score >= self.critical_threshold:
             status = "HEALTHY"
@@ -321,26 +320,26 @@ class SystemHealthCheck(HealthCheck):
         else:
             status = "CRITICAL"
             message = f"Critical system issues: {'; '.join(issues)}"
-        
+
         return status, score, message
 
 
 class HealthMonitor:
     """Comprehensive health monitoring system."""
-    
+
     def __init__(self):
         """Initialize health monitor."""
         self.logger = get_logger("Health")
         self.performance_logger = PerformanceLogger()
-        
+
         self.checks = {}
         self.check_history = defaultdict(deque)
         self.last_full_check = 0.0
         self.check_interval = 10.0  # Check every 10 seconds
-        
+
         # Initialize system health check
         self.add_check("system", SystemHealthCheck())
-    
+
     def add_check(self, name: str, health_check: HealthCheck) -> None:
         """Add a health check.
         
@@ -350,7 +349,7 @@ class HealthMonitor:
         """
         self.checks[name] = health_check
         self.logger.info(f"Added health check: {name}")
-    
+
     def run_check(self, name: str) -> Dict[str, Any]:
         """Run specific health check.
         
@@ -367,14 +366,14 @@ class HealthMonitor:
                 'value': 0.0,
                 'message': f'Health check "{name}" not found'
             }
-        
+
         check = self.checks[name]
-        
+
         try:
             self.performance_logger.start_timing(f"health_check_{name}")
             status, value, message = check.check()
             self.performance_logger.end_timing(f"health_check_{name}")
-            
+
             result = {
                 'name': name,
                 'status': status,
@@ -382,20 +381,20 @@ class HealthMonitor:
                 'message': message,
                 'timestamp': check.last_check_time
             }
-            
+
             # Store in history
             self.check_history[name].append(result)
             if len(self.check_history[name]) > 100:
                 self.check_history[name].popleft()
-            
+
             # Log if not healthy
             if status == "WARNING":
                 self.logger.warning(f"Health warning - {name}: {message}")
             elif status == "CRITICAL":
                 self.logger.error(f"Health critical - {name}: {message}")
-            
+
             return result
-            
+
         except Exception as e:
             error_result = {
                 'name': name,
@@ -404,10 +403,10 @@ class HealthMonitor:
                 'message': f'Health check failed: {e}',
                 'timestamp': time.time()
             }
-            
+
             self.logger.error(f"Health check error - {name}: {e}")
             return error_result
-    
+
     def run_all_checks(self) -> Dict[str, Dict[str, Any]]:
         """Run all registered health checks.
         
@@ -416,12 +415,12 @@ class HealthMonitor:
         """
         self.last_full_check = time.time()
         results = {}
-        
+
         for name in self.checks:
             results[name] = self.run_check(name)
-        
+
         return results
-    
+
     def get_overall_health(self) -> Tuple[str, float, str]:
         """Get overall system health.
         
@@ -430,32 +429,32 @@ class HealthMonitor:
         """
         if not self.checks:
             return "UNKNOWN", 0.0, "No health checks configured"
-        
+
         # Run all checks if needed
         if time.time() - self.last_full_check > self.check_interval:
             self.run_all_checks()
-        
+
         # Calculate overall health
         total_score = 0.0
         critical_issues = []
         warning_issues = []
         check_count = 0
-        
+
         for name, check in self.checks.items():
             if check.last_check_time > 0:  # Check has been run
                 total_score += check.value
                 check_count += 1
-                
+
                 if check.status == "CRITICAL":
                     critical_issues.append(f"{name}: {check.message}")
                 elif check.status == "WARNING":
                     warning_issues.append(f"{name}: {check.message}")
-        
+
         if check_count == 0:
             return "UNKNOWN", 0.0, "No health checks have been run"
-        
+
         avg_score = total_score / check_count
-        
+
         # Determine overall status
         if critical_issues:
             status = "CRITICAL"
@@ -473,9 +472,9 @@ class HealthMonitor:
         else:
             status = "DEGRADED"
             message = f"Overall health score: {avg_score:.2f}"
-        
+
         return status, avg_score, message
-    
+
     def get_health_report(self) -> Dict[str, Any]:
         """Get comprehensive health report.
         
@@ -483,7 +482,7 @@ class HealthMonitor:
             Health report dictionary
         """
         overall_status, overall_score, overall_message = self.get_overall_health()
-        
+
         individual_checks = {}
         for name in self.checks:
             check = self.checks[name]
@@ -493,7 +492,7 @@ class HealthMonitor:
                 'message': check.message,
                 'last_check': check.last_check_time
             }
-        
+
         return {
             'overall': {
                 'status': overall_status,

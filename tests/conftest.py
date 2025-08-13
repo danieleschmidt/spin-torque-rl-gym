@@ -115,15 +115,15 @@ def pytest_collection_modifyitems(config, items):
         # Add slow marker to integration and benchmark tests
         if "integration" in item.nodeid or "benchmark" in item.nodeid:
             item.add_marker(pytest.mark.slow)
-        
+
         # Add physics marker to physics tests
         if "physics" in item.nodeid:
             item.add_marker(pytest.mark.physics)
-        
+
         # Add integration marker to integration tests
         if "integration" in item.nodeid:
             item.add_marker(pytest.mark.integration)
-        
+
         # Add benchmark marker to benchmark tests
         if "benchmark" in item.nodeid:
             item.add_marker(pytest.mark.benchmark)

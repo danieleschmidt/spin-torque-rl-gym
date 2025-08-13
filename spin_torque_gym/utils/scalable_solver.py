@@ -2,13 +2,11 @@
 
 import logging
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import lru_cache
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
 
-from .robust_solver import RobustLLGSSolver
 from .cache import LRUCache, adaptive_cache
 from .concurrency import ThreadPoolManager, process_batch_concurrent
 from .performance_optimization import (
@@ -17,6 +15,7 @@ from .performance_optimization import (
     adaptive_batching,
     jit_compile_if_available,
 )
+from .robust_solver import RobustLLGSSolver
 
 logger = logging.getLogger(__name__)
 
@@ -56,29 +55,29 @@ class ScalableLLGSSolver(RobustLLGSSolver):
             cache_size: Maximum cache entries
         """
         super().__init__(method, rtol, atol, max_step, timeout, max_retries)
-        
+
         self.enable_caching = enable_caching
         self.enable_vectorization = enable_vectorization
         self.enable_jit = enable_jit
         self.max_workers = max_workers
         self.batch_size = batch_size
-        
+
         # Initialize optimization components
         if self.enable_caching:
             self.result_cache = LRUCache(cache_size)
             self.computation_cache = adaptive_cache(max_size=cache_size)
-        
+
         if self.enable_vectorization:
             self.vectorized_solver = VectorizedSolver()
             self.optimized_computation = OptimizedComputation()
-        
+
         # Thread pool for concurrent processing
         self.thread_pool = ThreadPoolManager(max_workers=self.max_workers)
-        
+
         # JIT compiled functions
         if self.enable_jit:
             self._setup_jit_functions()
-        
+
         # Performance tracking
         self.perf_stats = {
             'cache_hits': 0,
@@ -90,7 +89,7 @@ class ScalableLLGSSolver(RobustLLGSSolver):
             'peak_memory_usage': 0,
             'throughput_ops_per_sec': 0.0
         }
-        
+
         logger.info(f"Initialized ScalableLLGSSolver with {max_workers} workers, "
                    f"batch_size={batch_size}, caching={enable_caching}")
 
@@ -110,21 +109,21 @@ class ScalableLLGSSolver(RobustLLGSSolver):
         """
         batch_start = time.time()
         batch_size = len(batch_params)
-        
+
         if self.enable_monitoring:
             self.metrics.increment('batch_solves')
             self.metrics.record('batch_size', batch_size)
-        
+
         try:
             # Check cache for existing solutions
             cached_results, uncached_params, cache_indices = self._check_batch_cache(batch_params)
-            
+
             if len(uncached_params) == 0:
                 # All results cached
                 self.perf_stats['cache_hits'] += batch_size
                 logger.debug(f"Batch fully cached: {batch_size} results")
                 return cached_results
-            
+
             # Process uncached parameters
             if concurrent and len(uncached_params) > 1:
                 uncached_results = self._solve_batch_concurrent(uncached_params)
@@ -134,26 +133,26 @@ class ScalableLLGSSolver(RobustLLGSSolver):
                 self.perf_stats['vectorized_operations'] += 1
             else:
                 uncached_results = self._solve_batch_sequential(uncached_params)
-            
+
             # Merge cached and uncached results
             final_results = self._merge_batch_results(
                 cached_results, uncached_results, cache_indices
             )
-            
+
             # Cache new results
             if self.enable_caching:
                 self._cache_batch_results(uncached_params, uncached_results)
-            
+
             # Update performance stats
             batch_time = time.time() - batch_start
             throughput = batch_size / batch_time
             self.perf_stats['throughput_ops_per_sec'] = throughput
-            
+
             logger.debug(f"Batch solved: {batch_size} problems in {batch_time:.3f}s "
                         f"({throughput:.1f} ops/sec)")
-            
+
             return final_results
-            
+
         except Exception as e:
             logger.error(f"Batch solve failed: {e}")
             # Return fallback results
@@ -182,13 +181,13 @@ class ScalableLLGSSolver(RobustLLGSSolver):
             Solution dictionary with optimization metadata
         """
         solve_start = time.time()
-        
+
         # Analyze problem characteristics
         problem_profile = self._analyze_problem(m_initial, t_span, device_params)
-        
+
         # Select optimal strategy
         strategy = self._select_optimization_strategy(problem_profile)
-        
+
         try:
             # Execute with selected strategy
             if strategy == 'vectorized':
@@ -196,23 +195,23 @@ class ScalableLLGSSolver(RobustLLGSSolver):
                     m_initial, t_span, device_params, **kwargs
                 )
                 self.perf_stats['vectorized_operations'] += 1
-                
+
             elif strategy == 'cached':
                 cache_key = self._generate_cache_key(m_initial, t_span, device_params)
                 result = self.computation_cache.get_or_compute(
                     cache_key,
                     lambda: super().solve(m_initial, t_span, device_params, **kwargs)
                 )
-                
+
             elif strategy == 'jit':
                 result = self._solve_with_jit(
                     m_initial, t_span, device_params, **kwargs
                 )
-                
+
             else:
                 # Standard solve
                 result = super().solve(m_initial, t_span, device_params, **kwargs)
-            
+
             # Add optimization metadata
             solve_time = time.time() - solve_start
             result.update({
@@ -220,9 +219,9 @@ class ScalableLLGSSolver(RobustLLGSSolver):
                 'problem_profile': problem_profile,
                 'solve_time_optimized': solve_time
             })
-            
+
             return result
-            
+
         except Exception as e:
             logger.error(f"Adaptive solve failed: {e}")
             return super().solve(m_initial, t_span, device_params, **kwargs)
@@ -234,18 +233,18 @@ class ScalableLLGSSolver(RobustLLGSSolver):
         """Check cache for batch parameters."""
         if not self.enable_caching:
             return [], batch_params, list(range(len(batch_params)))
-        
+
         cached_results = []
         uncached_params = []
         cache_indices = []
-        
+
         for i, params in enumerate(batch_params):
             cache_key = self._generate_cache_key(
                 params['m_initial'],
                 params['t_span'],
                 params['device_params']
             )
-            
+
             cached_result = self.result_cache.get(cache_key)
             if cached_result is not None:
                 cached_results.append(cached_result)
@@ -254,7 +253,7 @@ class ScalableLLGSSolver(RobustLLGSSolver):
                 uncached_params.append(params)
                 cache_indices.append(i)
                 self.perf_stats['cache_misses'] += 1
-        
+
         return cached_results, uncached_params, cache_indices
 
     def _solve_batch_concurrent(
@@ -264,7 +263,7 @@ class ScalableLLGSSolver(RobustLLGSSolver):
         """Solve batch using concurrent processing."""
         def solve_single(params):
             return super(ScalableLLGSSolver, self).solve(**params)
-        
+
         return process_batch_concurrent(
             solve_single,
             batch_params,
@@ -278,21 +277,21 @@ class ScalableLLGSSolver(RobustLLGSSolver):
         """Solve batch using vectorized operations."""
         if not self.enable_vectorization:
             return self._solve_batch_sequential(batch_params)
-        
+
         try:
             # Extract arrays for vectorized processing
             m_initial_batch = np.array([p['m_initial'] for p in batch_params])
             device_params_batch = [p['device_params'] for p in batch_params]
-            
+
             # Use vectorized solver
             results = self.vectorized_solver.solve_batch(
                 m_initial_batch,
                 batch_params[0]['t_span'],  # Assume same time span
                 device_params_batch
             )
-            
+
             return results
-            
+
         except Exception as e:
             logger.warning(f"Vectorized batch solve failed: {e}. Falling back to sequential.")
             return self._solve_batch_sequential(batch_params)
@@ -317,13 +316,13 @@ class ScalableLLGSSolver(RobustLLGSSolver):
         """Merge cached and uncached results in correct order."""
         if not cached_results:
             return uncached_results
-        
+
         final_results = [None] * (len(cached_results) + len(uncached_results))
-        
+
         # Place cached results
         cached_idx = 0
         uncached_idx = 0
-        
+
         for i in range(len(final_results)):
             if i in cache_indices:
                 final_results[i] = uncached_results[uncached_idx]
@@ -331,7 +330,7 @@ class ScalableLLGSSolver(RobustLLGSSolver):
             else:
                 final_results[i] = cached_results[cached_idx]
                 cached_idx += 1
-        
+
         return final_results
 
     def _cache_batch_results(
@@ -357,14 +356,14 @@ class ScalableLLGSSolver(RobustLLGSSolver):
         """Analyze problem characteristics for optimization."""
         t_start, t_end = t_span
         duration = t_end - t_start
-        
+
         # Problem complexity metrics
         damping = device_params.get('damping', 0.01)
         ms = device_params.get('saturation_magnetization', 800e3)
         anisotropy = device_params.get('uniaxial_anisotropy', 1e6)
-        
+
         complexity_score = (duration / 1e-9) * (1 / damping) * (ms / 1e6)
-        
+
         return {
             'duration': duration,
             'complexity_score': complexity_score,
@@ -380,7 +379,7 @@ class ScalableLLGSSolver(RobustLLGSSolver):
         """Select optimal strategy based on problem profile."""
         complexity = problem_profile['complexity_score']
         duration = problem_profile['duration']
-        
+
         # Strategy selection logic
         if complexity < 10 and self.enable_caching:
             return 'cached'
@@ -440,17 +439,17 @@ class ScalableLLGSSolver(RobustLLGSSolver):
         """Generate cache key for parameters."""
         m_key = tuple(np.round(m_initial, 6))
         t_key = tuple(np.round(t_span, 12))
-        
+
         # Convert device params to sorted tuple for consistency
         if isinstance(device_params_tuple, dict):
             device_params_tuple = tuple(sorted(device_params_tuple.items()))
-        
+
         return f"{m_key}_{t_key}_{hash(device_params_tuple)}"
 
     def get_performance_stats(self) -> Dict[str, Any]:
         """Get performance optimization statistics."""
         stats = self.perf_stats.copy()
-        
+
         total_operations = stats['cache_hits'] + stats['cache_misses']
         if total_operations > 0:
             stats['cache_hit_rate'] = stats['cache_hits'] / total_operations
@@ -458,11 +457,11 @@ class ScalableLLGSSolver(RobustLLGSSolver):
         else:
             stats['cache_hit_rate'] = 0.0
             stats['cache_efficiency'] = 0.0
-        
+
         # Add resource utilization
         stats['thread_pool_utilization'] = self.thread_pool.get_utilization()
         stats['memory_efficiency'] = self._estimate_memory_efficiency()
-        
+
         return stats
 
     def _estimate_memory_efficiency(self) -> float:
@@ -477,26 +476,26 @@ class ScalableLLGSSolver(RobustLLGSSolver):
         batch_size = workload_profile.get('typical_batch_size', self.batch_size)
         problem_complexity = workload_profile.get('complexity', 'medium')
         memory_constraint = workload_profile.get('memory_limit_mb', 1000)
-        
+
         # Adjust parameters based on workload
         if problem_complexity == 'high':
             self.max_workers = min(self.max_workers, 2)  # Reduce for complex problems
             self.timeout *= 2
         elif problem_complexity == 'low':
             self.max_workers = min(8, self.max_workers * 2)  # Increase for simple problems
-        
+
         # Adjust cache size based on memory constraint
         if self.enable_caching:
             max_cache_entries = memory_constraint * 10  # Rough estimate
             self.result_cache.resize(min(max_cache_entries, 5000))
-        
+
         # Adjust batch size
         self.batch_size = adaptive_batching.optimize_batch_size(
             current_size=batch_size,
             problem_complexity=problem_complexity,
             available_workers=self.max_workers
         )
-        
+
         logger.info(f"Optimized for workload: workers={self.max_workers}, "
                    f"batch_size={self.batch_size}, cache_size={len(self.result_cache)}")
 
@@ -504,9 +503,9 @@ class ScalableLLGSSolver(RobustLLGSSolver):
         """Cleanup resources."""
         if hasattr(self, 'thread_pool'):
             self.thread_pool.shutdown()
-        
+
         if self.enable_caching:
             self.result_cache.clear()
             self.computation_cache.clear()
-        
+
         logger.info("ScalableLLGSSolver cleanup completed")

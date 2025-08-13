@@ -43,7 +43,7 @@ class SimpleLLGSSolver:
         self.atol = atol
         self.max_step = max_step
         self.timeout = timeout
-        
+
         # Numerical stability enhancements
         self.min_dt = 1e-16  # Minimum time step
         self.stability_factor = 0.8  # CFL-like stability factor
