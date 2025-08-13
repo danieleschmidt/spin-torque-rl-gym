@@ -30,7 +30,7 @@ STT_MRAM_CONFIGS = {
             "thermal_stability": 60, # E_b/k_B T
         }
     },
-    
+
     "low_damping": {
         "device_type": "stt_mram",
         "geometry": {
@@ -57,7 +57,7 @@ STT_MRAM_CONFIGS = {
             "thermal_stability": 80,
         }
     },
-    
+
     "high_thermal_stability": {
         "device_type": "stt_mram",
         "geometry": {
@@ -203,14 +203,14 @@ TEST_SCENARIOS = {
         "target_alignment": 0.9,
         "max_steps": 50,
     },
-    
+
     "standard_switching": {
         "description": "Standard switching scenario",
         "device_modifications": {},  # Use default parameters
         "target_alignment": 0.95,
         "max_steps": 100,
     },
-    
+
     "hard_switching": {
         "description": "Challenging switching scenario",
         "device_modifications": {
@@ -221,7 +221,7 @@ TEST_SCENARIOS = {
         "target_alignment": 0.98,
         "max_steps": 200,
     },
-    
+
     "ultra_fast_switching": {
         "description": "Ultra-fast switching with time constraints",
         "device_modifications": {
@@ -231,7 +231,7 @@ TEST_SCENARIOS = {
         "max_steps": 20,  # Very limited time
         "time_penalty_weight": 2.0,
     },
-    
+
     "energy_efficient": {
         "description": "Energy-efficient switching scenario",
         "device_modifications": {},
@@ -240,7 +240,7 @@ TEST_SCENARIOS = {
         "energy_penalty_weight": 1.0,
         "current_limit": 1e6,  # A/cm² (reduced current limit)
     },
-    
+
     "thermal_robust": {
         "description": "High-temperature operation",
         "device_modifications": {
@@ -264,7 +264,7 @@ EXPERIMENTAL_BENCHMARKS = {
         "write_energy": 5e-12,       # J
         "read_disturb_rate": 1e-6,
     },
-    
+
     "Intel_2018": {
         "reference": "Intel, IEDM 2018",
         "device_params": STT_MRAM_CONFIGS["low_damping"],
@@ -274,7 +274,7 @@ EXPERIMENTAL_BENCHMARKS = {
         "write_energy": 3e-12,
         "read_disturb_rate": 5e-7,
     },
-    
+
     "TSMC_2020": {
         "reference": "TSMC, VLSI 2020",
         "device_params": SOT_MRAM_CONFIGS["standard"],
@@ -302,14 +302,14 @@ def get_device_config(device_type: str, variant: str = "standard") -> dict:
         "vcma_mram": VCMA_MRAM_CONFIGS,
         "skyrmion": SKYRMION_CONFIGS,
     }
-    
+
     if device_type not in config_map:
         raise ValueError(f"Unknown device type: {device_type}")
-    
+
     if variant not in config_map[device_type]:
         available = list(config_map[device_type].keys())
         raise ValueError(f"Unknown variant '{variant}' for {device_type}. Available: {available}")
-    
+
     return config_map[device_type][variant].copy()
 
 
@@ -325,7 +325,7 @@ def get_test_scenario(scenario_name: str) -> dict:
     if scenario_name not in TEST_SCENARIOS:
         available = list(TEST_SCENARIOS.keys())
         raise ValueError(f"Unknown scenario '{scenario_name}'. Available: {available}")
-    
+
     return TEST_SCENARIOS[scenario_name].copy()
 
 
@@ -341,5 +341,5 @@ def get_experimental_benchmark(benchmark_name: str) -> dict:
     if benchmark_name not in EXPERIMENTAL_BENCHMARKS:
         available = list(EXPERIMENTAL_BENCHMARKS.keys())
         raise ValueError(f"Unknown benchmark '{benchmark_name}'. Available: {available}")
-    
+
     return EXPERIMENTAL_BENCHMARKS[benchmark_name].copy()

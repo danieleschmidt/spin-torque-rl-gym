@@ -18,8 +18,8 @@ class TestPackageImport:
     def test_submodule_imports(self):
         """Test that submodules can be imported."""
         try:
-            import spin_torque_gym.envs
             import spin_torque_gym.devices
+            import spin_torque_gym.envs
             import spin_torque_gym.physics
             import spin_torque_gym.rewards
         except ImportError:
@@ -59,15 +59,15 @@ class TestPhysicsConstants:
         # Planck constant (J⋅s)
         h_bar = 1.054571817e-34
         assert h_bar > 0
-        
+
         # Boltzmann constant (J/K)
         k_b = 1.380649e-23
         assert k_b > 0
-        
+
         # Electron charge (C)
         e = 1.602176634e-19
         assert e > 0
-        
+
         # Electron mass (kg)
         m_e = 9.1093837015e-31
         assert m_e > 0
@@ -77,7 +77,7 @@ class TestPhysicsConstants:
         # Tesla to A/m conversion factor
         mu_0 = 4 * np.pi * 1e-7  # H/m
         assert mu_0 > 0
-        
+
         # Typical saturation magnetization (A/m)
         ms_typical = 800e3
         assert ms_typical > 0
@@ -92,7 +92,7 @@ class TestParameterValidation:
         valid_temps = [0, 77, 300, 400, 1000]
         for temp in valid_temps:
             assert temp >= 0, f"Temperature {temp} should be non-negative"
-        
+
         # Invalid temperatures
         invalid_temps = [-1, -273.16]
         for temp in invalid_temps:

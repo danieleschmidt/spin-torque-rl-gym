@@ -11,10 +11,10 @@ import os
 import re
 import secrets
 import time
-from typing import Any, Dict, List, Optional, Union, Callable
-from functools import wraps
 from dataclasses import dataclass
 from enum import Enum
+from functools import wraps
+from typing import Any, Dict, List, Optional, Union
 
 
 class SecurityLevel(Enum):
@@ -41,7 +41,7 @@ class SecurityConfig:
     max_input_size: int = 1024 * 1024  # 1MB
     allowed_file_extensions: List[str] = None
     blocked_patterns: List[str] = None
-    
+
     def __post_init__(self):
         if self.allowed_file_extensions is None:
             self.allowed_file_extensions = ['.json', '.yaml', '.yml', '.txt', '.csv']
@@ -59,11 +59,11 @@ class SecurityConfig:
 
 class InputSanitizer:
     """Comprehensive input sanitization and validation."""
-    
+
     def __init__(self, config: SecurityConfig = None):
         self.config = config or SecurityConfig()
         self._compile_patterns()
-    
+
     def _compile_patterns(self):
         """Compile regex patterns for efficiency."""
         self.compiled_patterns = []
@@ -72,7 +72,7 @@ class InputSanitizer:
                 self.compiled_patterns.append(re.compile(pattern, re.IGNORECASE))
             except re.error as e:
                 logging.warning(f"Invalid regex pattern '{pattern}': {e}")
-    
+
     def sanitize_string(self, value: str, max_length: int = None) -> str:
         """Sanitize string input.
         
@@ -88,24 +88,24 @@ class InputSanitizer:
         """
         if not isinstance(value, str):
             raise ValueError("Input must be a string")
-        
+
         # Length check
         max_len = max_length or self.config.max_input_size
         if len(value) > max_len:
             raise ValueError(f"Input too long: {len(value)} > {max_len}")
-        
+
         # Check for blocked patterns
         for pattern in self.compiled_patterns:
             if pattern.search(value):
                 logging.warning(f"Blocked pattern detected: {pattern.pattern}")
                 raise ValueError("Input contains potentially malicious content")
-        
+
         # Basic sanitization
         if self.config.validation_level in [ValidationLevel.STRICT, ValidationLevel.PARANOID]:
             # Remove null bytes and control characters (except whitespace)
-            sanitized = ''.join(char for char in value 
+            sanitized = ''.join(char for char in value
                               if ord(char) >= 32 or char in '\t\n\r')
-            
+
             # Additional paranoid checks
             if self.config.validation_level == ValidationLevel.PARANOID:
                 # Check for suspicious character sequences
@@ -115,13 +115,13 @@ class InputSanitizer:
                     sanitized = self._html_encode(sanitized)
         else:
             sanitized = value
-        
+
         # Log if enabled
         if self.config.enable_input_logging:
             logging.info(f"Sanitized input: {len(value)} -> {len(sanitized)} chars")
-        
+
         return sanitized
-    
+
     def _html_encode(self, text: str) -> str:
         """HTML encode special characters."""
         html_entities = {
@@ -134,10 +134,10 @@ class InputSanitizer:
         for char, entity in html_entities.items():
             text = text.replace(char, entity)
         return text
-    
+
     def validate_numeric_input(
-        self, 
-        value: Union[int, float], 
+        self,
+        value: Union[int, float],
         min_value: float = None,
         max_value: float = None,
         allow_nan: bool = False,
@@ -160,27 +160,27 @@ class InputSanitizer:
         """
         if not isinstance(value, (int, float)):
             raise ValueError(f"Expected numeric value, got {type(value)}")
-        
+
         # Check for NaN and infinity
         import math
         if math.isnan(value) and not allow_nan:
             raise ValueError("NaN values are not allowed")
-        
+
         if math.isinf(value) and not allow_inf:
             raise ValueError("Infinite values are not allowed")
-        
+
         # Range validation
         if min_value is not None and value < min_value:
             raise ValueError(f"Value {value} below minimum {min_value}")
-        
+
         if max_value is not None and value > max_value:
             raise ValueError(f"Value {value} above maximum {max_value}")
-        
+
         return value
-    
+
     def validate_array_input(
-        self, 
-        value: List[Union[int, float]], 
+        self,
+        value: List[Union[int, float]],
         expected_shape: tuple = None,
         element_range: tuple = None
     ) -> List[Union[int, float]]:
@@ -199,7 +199,7 @@ class InputSanitizer:
         """
         if not isinstance(value, (list, tuple)):
             raise ValueError(f"Expected list or tuple, got {type(value)}")
-        
+
         # Shape validation
         if expected_shape is not None:
             if len(expected_shape) == 1:
@@ -210,7 +210,7 @@ class InputSanitizer:
                 # Multi-dimensional - basic check
                 if len(value) != expected_shape[0]:
                     raise ValueError(f"Expected first dimension {expected_shape[0]}, got {len(value)}")
-        
+
         # Element validation
         validated_elements = []
         for i, element in enumerate(value):
@@ -225,9 +225,9 @@ class InputSanitizer:
                 validated_elements.append(validated_element)
             except ValueError as e:
                 raise ValueError(f"Invalid element at index {i}: {e}")
-        
+
         return validated_elements
-    
+
     def validate_file_path(self, path: str) -> str:
         """Validate file path for security.
         
@@ -242,37 +242,37 @@ class InputSanitizer:
         """
         if not isinstance(path, str):
             raise ValueError("Path must be a string")
-        
+
         # Basic sanitization
         sanitized_path = self.sanitize_string(path)
-        
+
         # Path traversal prevention
         if '..' in sanitized_path:
             raise ValueError("Path traversal detected")
-        
+
         # Absolute path check
         if os.path.isabs(sanitized_path):
             logging.warning(f"Absolute path provided: {sanitized_path}")
             if self.config.validation_level == ValidationLevel.PARANOID:
                 raise ValueError("Absolute paths not allowed in paranoid mode")
-        
+
         # File extension validation
         if self.config.allowed_file_extensions:
             _, ext = os.path.splitext(sanitized_path.lower())
             if ext not in self.config.allowed_file_extensions:
                 raise ValueError(f"File extension '{ext}' not allowed")
-        
+
         return sanitized_path
 
 
 class RateLimiter:
     """Rate limiting for API protection."""
-    
+
     def __init__(self, max_requests: int = 100, window_seconds: int = 60):
         self.max_requests = max_requests
         self.window_seconds = window_seconds
         self.requests = {}  # client_id -> list of timestamps
-    
+
     def is_allowed(self, client_id: str) -> bool:
         """Check if request is allowed for client.
         
@@ -283,51 +283,51 @@ class RateLimiter:
             True if request is allowed, False otherwise
         """
         current_time = time.time()
-        
+
         # Initialize client if not exists
         if client_id not in self.requests:
             self.requests[client_id] = []
-        
+
         client_requests = self.requests[client_id]
-        
+
         # Remove old requests outside window
         cutoff_time = current_time - self.window_seconds
         client_requests[:] = [req_time for req_time in client_requests if req_time > cutoff_time]
-        
+
         # Check if under limit
         if len(client_requests) >= self.max_requests:
             return False
-        
+
         # Add current request
         client_requests.append(current_time)
         return True
-    
+
     def get_remaining_requests(self, client_id: str) -> int:
         """Get remaining requests for client."""
         if client_id not in self.requests:
             return self.max_requests
-        
+
         current_time = time.time()
         cutoff_time = current_time - self.window_seconds
-        recent_requests = [req_time for req_time in self.requests[client_id] 
+        recent_requests = [req_time for req_time in self.requests[client_id]
                           if req_time > cutoff_time]
-        
+
         return max(0, self.max_requests - len(recent_requests))
 
 
 class SecurityAuditor:
     """Security auditing and monitoring."""
-    
+
     def __init__(self):
         self.security_events = []
         self.suspicious_patterns = 0
         self.validation_failures = 0
         self.rate_limit_violations = 0
-    
+
     def log_security_event(
-        self, 
-        event_type: str, 
-        severity: SecurityLevel, 
+        self,
+        event_type: str,
+        severity: SecurityLevel,
         message: str,
         details: Dict[str, Any] = None
     ):
@@ -346,13 +346,13 @@ class SecurityAuditor:
             'message': message,
             'details': details or {}
         }
-        
+
         self.security_events.append(event)
-        
+
         # Keep only recent events
         if len(self.security_events) > 1000:
             self.security_events = self.security_events[-500:]
-        
+
         # Update counters
         if event_type == 'suspicious_pattern':
             self.suspicious_patterns += 1
@@ -360,7 +360,7 @@ class SecurityAuditor:
             self.validation_failures += 1
         elif event_type == 'rate_limit_violation':
             self.rate_limit_violations += 1
-        
+
         # Log based on severity
         log_level = {
             SecurityLevel.LOW: logging.INFO,
@@ -368,9 +368,9 @@ class SecurityAuditor:
             SecurityLevel.HIGH: logging.ERROR,
             SecurityLevel.CRITICAL: logging.CRITICAL
         }.get(severity, logging.WARNING)
-        
+
         logging.log(log_level, f"SECURITY [{event_type}]: {message}")
-    
+
     def get_security_summary(self) -> Dict[str, Any]:
         """Get security audit summary."""
         return {
@@ -384,7 +384,7 @@ class SecurityAuditor:
 
 class SecureHasher:
     """Secure hashing utilities."""
-    
+
     @staticmethod
     def hash_password(password: str, salt: bytes = None) -> tuple[str, bytes]:
         """Hash password securely.
@@ -398,7 +398,7 @@ class SecureHasher:
         """
         if salt is None:
             salt = secrets.token_bytes(32)
-        
+
         # Use PBKDF2 for password hashing
         password_hash = hashlib.pbkdf2_hmac(
             'sha256',
@@ -406,9 +406,9 @@ class SecureHasher:
             salt,
             100000  # iterations
         )
-        
+
         return password_hash.hex(), salt
-    
+
     @staticmethod
     def verify_password(password: str, hashed_password: str, salt: bytes) -> bool:
         """Verify password against hash.
@@ -423,7 +423,7 @@ class SecureHasher:
         """
         computed_hash, _ = SecureHasher.hash_password(password, salt)
         return secrets.compare_digest(computed_hash, hashed_password)
-    
+
     @staticmethod
     def generate_token(length: int = 32) -> str:
         """Generate secure random token.
@@ -435,7 +435,7 @@ class SecureHasher:
             Secure random token (hex string)
         """
         return secrets.token_hex(length)
-    
+
     @staticmethod
     def compute_hmac(message: str, key: bytes) -> str:
         """Compute HMAC for message integrity.
@@ -470,12 +470,12 @@ def secure_function(
         config = SecurityConfig(validation_level=validation_level)
         sanitizer = InputSanitizer(config)
         auditor = SecurityAuditor()
-        
+
         if rate_limit:
             limiter = RateLimiter(max_requests=rate_limit[0], window_seconds=rate_limit[1])
         else:
             limiter = None
-        
+
         @wraps(func)
         def wrapper(*args, **kwargs):
             # Rate limiting check
@@ -488,7 +488,7 @@ def secure_function(
                         f"Rate limit exceeded for client {client_id}"
                     )
                     raise ValueError("Rate limit exceeded")
-            
+
             # Authentication check (simplified)
             if require_auth:
                 auth_token = kwargs.get('auth_token')
@@ -499,7 +499,7 @@ def secure_function(
                         "Missing authentication token"
                     )
                     raise ValueError("Authentication required")
-            
+
             # Input validation and sanitization
             try:
                 validated_args = []
@@ -512,7 +512,7 @@ def secure_function(
                         validated_args.append(sanitizer.validate_array_input(arg))
                     else:
                         validated_args.append(arg)
-                
+
                 validated_kwargs = {}
                 for key, value in kwargs.items():
                     if isinstance(value, str) and key not in ['client_id', 'auth_token']:
@@ -523,10 +523,10 @@ def secure_function(
                         validated_kwargs[key] = sanitizer.validate_array_input(value)
                     else:
                         validated_kwargs[key] = value
-                
+
                 # Call original function with validated inputs
                 return func(*validated_args, **validated_kwargs)
-                
+
             except ValueError as e:
                 auditor.log_security_event(
                     'validation_failure',
@@ -534,14 +534,14 @@ def secure_function(
                     f"Input validation failed: {e}"
                 )
                 raise
-            
+
         # Attach security components for inspection
         wrapper._security_config = config
         wrapper._security_auditor = auditor
         wrapper._rate_limiter = limiter
-        
+
         return wrapper
-    
+
     return decorator
 
 
@@ -558,11 +558,11 @@ def initialize_security(config: SecurityConfig = None) -> None:
         config: Security configuration
     """
     global global_config, global_sanitizer, global_auditor
-    
+
     global_config = config or SecurityConfig()
     global_sanitizer = InputSanitizer(global_config)
     global_auditor = SecurityAuditor()
-    
+
     logging.info(f"Security system initialized with {global_config.validation_level.value} validation")
 
 
@@ -583,10 +583,10 @@ def get_security_status() -> Dict[str, Any]:
 if __name__ == "__main__":
     # Initialize security
     initialize_security(SecurityConfig(validation_level=ValidationLevel.STRICT))
-    
+
     # Test input sanitization
     sanitizer = InputSanitizer()
-    
+
     # Test secure function decorator
     @secure_function(
         validation_level=ValidationLevel.STRICT,
@@ -596,20 +596,20 @@ if __name__ == "__main__":
     def secure_calculation(x: float, y: float) -> float:
         """Example secure calculation function."""
         return x * y + 42.0
-    
+
     try:
         result = secure_calculation(3.14, 2.0)
         print(f"Secure calculation result: {result}")
-        
+
         # Test validation
         validated_array = sanitizer.validate_array_input([1, 2, 3], expected_shape=(3,))
         print(f"Validated array: {validated_array}")
-        
+
         # Test security status
         status = get_security_status()
         print(f"Security status: {status['config']['validation_level']}")
-        
+
         print("Security validation system ready!")
-        
+
     except Exception as e:
         print(f"Security test failed: {e}")
