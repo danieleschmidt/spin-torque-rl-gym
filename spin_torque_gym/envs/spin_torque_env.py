@@ -13,7 +13,7 @@ from gymnasium import spaces
 
 from ..devices import DeviceFactory
 from ..physics import MaterialDatabase, ThermalFluctuations
-from ..physics.simple_solver import SimpleLLGSSolver
+from ..utils.robust_solver import RobustLLGSSolver
 from ..rewards import CompositeReward
 from ..utils import (
     EnvironmentMonitor,
@@ -89,8 +89,17 @@ class SpinTorqueEnv(gym.Env):
         self._np_random = None
         self.seed(seed)
 
-        # Initialize physics components
-        self.solver = SimpleLLGSSolver(method='euler', rtol=1e-3, atol=1e-6, timeout=0.1)
+        # Initialize physics components with robust solver
+        self.solver = RobustLLGSSolver(
+            method='rk4', 
+            rtol=1e-3, 
+            atol=1e-6, 
+            timeout=2.0,
+            max_retries=2,
+            fallback_method='euler',
+            enable_monitoring=True,
+            enable_validation=True
+        )
         self.thermal_model = ThermalFluctuations(
             temperature=temperature,
             correlation_time=1e-12,
@@ -441,7 +450,7 @@ class SpinTorqueEnv(gym.Env):
         try:
             result = self.solver.solve(
                 m_initial=self.current_magnetization,
-                time_span=(0, pulse_duration),
+                t_span=(0, pulse_duration),
                 device_params=self.device.device_params,
                 current_func=current_func,
                 field_func=field_func,
