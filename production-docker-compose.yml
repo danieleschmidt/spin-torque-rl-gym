@@ -1,0 +1,107 @@
+# Production Docker Compose for Spin Torque RL-Gym
+version: '3.8'
+
+services:
+  # Main application service
+  spin-torque-gym:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: production
+    image: spin-torque-gym:latest
+    container_name: spin-torque-gym-prod
+    restart: unless-stopped
+    
+    ports:
+      - "8080:8080"  # Demo server
+      - "8888:8888"  # Jupyter notebook
+    
+    environment:
+      - ENVIRONMENT=production
+      - LOG_LEVEL=INFO
+      - PYTHONUNBUFFERED=1
+      - ENABLE_MONITORING=true
+      - CACHE_SIZE=1000
+      - MAX_WORKERS=4
+    
+    volumes:
+      - ./data:/app/data
+      - ./results:/app/results
+      - ./logs:/app/logs
+      - ./models:/app/models
+    
+    healthcheck:
+      test: ["CMD", "python", "-c", "import spin_torque_gym; import gymnasium as gym; env = gym.make('SpinTorque-v0'); env.reset(); env.close()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '1.0'
+          memory: 2G
+    
+    command: ["serve"]
+
+  # Jupyter development service (optional)
+  jupyter:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: production
+    image: spin-torque-gym:latest
+    container_name: spin-torque-gym-jupyter
+    restart: unless-stopped
+    
+    ports:
+      - "8889:8888"
+    
+    environment:
+      - ENVIRONMENT=development
+      - LOG_LEVEL=DEBUG
+      - PYTHONUNBUFFERED=1
+    
+    volumes:
+      - ./examples:/app/examples
+      - ./notebooks:/app/notebooks
+      - ./data:/app/data
+    
+    command: ["jupyter"]
+    
+    profiles:
+      - dev
+
+  # Benchmark service
+  benchmark:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: production
+    image: spin-torque-gym:latest
+    container_name: spin-torque-gym-benchmark
+    
+    environment:
+      - ENVIRONMENT=benchmark
+      - LOG_LEVEL=INFO
+    
+    volumes:
+      - ./results:/app/results
+    
+    command: ["benchmark"]
+    
+    profiles:
+      - benchmark
+
+volumes:
+  spin_torque_data:
+  spin_torque_logs:
+  spin_torque_models:
+
+networks:
+  default:
+    name: spin-torque-gym-network

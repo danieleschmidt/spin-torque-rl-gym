@@ -482,6 +482,57 @@ class SafetyValidator:
         return power
 
 
+# Convenience functions for backward compatibility
+def validate_magnetization(magnetization: np.ndarray, name: str = "magnetization") -> np.ndarray:
+    """Validate and normalize magnetization vector."""
+    return PhysicsValidator.validate_magnetization(magnetization, name)
+
+
+def validate_parameters(params: Dict[str, Any], device_type: str = "stt_mram") -> Dict[str, Any]:
+    """Validate device parameters."""
+    return PhysicsValidator.validate_device_params(params, device_type)
+
+
+def validate_action(action: Union[np.ndarray, int], action_space: Any) -> Union[np.ndarray, int]:
+    """Validate action for gymnasium environment."""
+    import gymnasium as gym
+    
+    if isinstance(action_space, gym.spaces.Box):
+        return ActionValidator.validate_continuous_action(action, action_space)
+    elif isinstance(action_space, gym.spaces.Discrete):
+        return ActionValidator.validate_discrete_action(action, action_space)
+    else:
+        raise ValidationError(f"Unsupported action space type: {type(action_space)}")
+
+
+def validate_observation(observation: Union[np.ndarray, Dict], observation_space: Any) -> Union[np.ndarray, Dict]:
+    """Validate observation from gymnasium environment."""
+    import gymnasium as gym
+    
+    if isinstance(observation_space, gym.spaces.Box):
+        if not isinstance(observation, np.ndarray):
+            raise ValidationError("Observation must be numpy array for Box space")
+        
+        if observation.shape != observation_space.shape:
+            raise ValidationError(f"Observation shape {observation.shape} doesn't match space {observation_space.shape}")
+        
+        if not np.all(np.isfinite(observation)):
+            raise ValidationError("Observation contains non-finite values")
+            
+        return observation
+    
+    elif isinstance(observation_space, gym.spaces.Dict):
+        if not isinstance(observation, dict):
+            raise ValidationError("Observation must be dict for Dict space")
+        
+        # Basic validation for dict observations
+        return observation
+    
+    else:
+        # Basic validation for other space types
+        return observation
+
+
 def validate_environment_config(config: Dict[str, Any]) -> Dict[str, Any]:
     """Validate environment configuration.
     

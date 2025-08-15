@@ -346,3 +346,65 @@ class SafetyWrapper:
         reward = np.clip(reward, -1e6, 1e6)
 
         return reward
+
+
+class MetricsCollector:
+    """Collect and aggregate performance metrics."""
+
+    def __init__(self):
+        """Initialize metrics collector."""
+        self.metrics = {}
+        self.counters = {}
+        
+    def record(self, name: str, value: float) -> None:
+        """Record a metric value."""
+        if name not in self.metrics:
+            self.metrics[name] = []
+        self.metrics[name].append(value)
+        
+    def increment(self, name: str, amount: int = 1) -> None:
+        """Increment a counter."""
+        if name not in self.counters:
+            self.counters[name] = 0
+        self.counters[name] += amount
+        
+    def get_metrics(self) -> Dict[str, Any]:
+        """Get all collected metrics."""
+        return {
+            'metrics': self.metrics.copy(),
+            'counters': self.counters.copy()
+        }
+        
+    def reset(self) -> None:
+        """Reset all metrics."""
+        self.metrics.clear()
+        self.counters.clear()
+
+
+class HealthMonitor:
+    """Monitor system health and status."""
+
+    def __init__(self):
+        """Initialize health monitor."""
+        self.operations = {}
+        self.status = "healthy"
+        
+    def start_operation(self, name: str) -> None:
+        """Start monitoring an operation."""
+        self.operations[name] = {'start_time': time.time(), 'active': True}
+        
+    def end_operation(self, name: str, success: bool = True) -> None:
+        """End monitoring an operation."""
+        if name in self.operations:
+            self.operations[name]['end_time'] = time.time()
+            self.operations[name]['success'] = success
+            self.operations[name]['active'] = False
+            
+    def get_status(self) -> str:
+        """Get current health status."""
+        return self.status
+        
+    def reset(self) -> None:
+        """Reset health monitor."""
+        self.operations.clear()
+        self.status = "healthy"

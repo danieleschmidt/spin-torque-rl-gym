@@ -482,6 +482,38 @@ def setup_error_handling(log_level: str = "WARNING") -> None:
     logging.info("Error handling system initialized")
 
 
+def safe_execute(func: Callable, *args, **kwargs) -> Any:
+    """Execute function with comprehensive error handling.
+    
+    Args:
+        func: Function to execute
+        *args: Function arguments
+        **kwargs: Function keyword arguments
+        
+    Returns:
+        Function result or safe fallback
+        
+    Raises:
+        SpinTorqueError: If execution fails and no recovery possible
+    """
+    try:
+        return func(*args, **kwargs)
+    except Exception as e:
+        # Attempt recovery
+        context = {'function': func.__name__, 'args': args, 'kwargs': kwargs}
+        recovery_result = error_recovery_manager.handle_error(e, context)
+        
+        if recovery_result is not None:
+            return recovery_result
+        
+        # Re-raise as SpinTorqueError
+        raise SpinTorqueError(
+            f"Function {func.__name__} failed: {e}",
+            error_code="FUNCTION_EXECUTION_FAILED",
+            context=context
+        ) from e
+
+
 # Example usage and testing
 if __name__ == "__main__":
     setup_error_handling()
