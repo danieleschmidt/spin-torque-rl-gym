@@ -298,7 +298,7 @@ def _generate_cache_key(func_name: str, args: tuple, kwargs: dict) -> str:
 
     # Create hash for consistent key length
     key_data = f"{func_name}:{args_str}:{kwargs_str}"
-    return hashlib.md5(key_data.encode()).hexdigest()
+    return hashlib.md5(key_data.encode(), usedforsecurity=False).hexdigest()
 
 
 class WorkerPool:

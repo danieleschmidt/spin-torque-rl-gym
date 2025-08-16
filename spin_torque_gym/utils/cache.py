@@ -140,7 +140,7 @@ class LRUCache:
 
         # Use hash for very long keys
         if len(key_str) > 200:
-            key_str = hashlib.md5(key_str.encode()).hexdigest()
+            key_str = hashlib.md5(key_str.encode(), usedforsecurity=False).hexdigest()
 
         return key_str
 
