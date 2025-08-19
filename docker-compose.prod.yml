@@ -1,0 +1,180 @@
+# Production Docker Compose Configuration
+# Spin-Torque RL-Gym v1.0
+
+version: '3.8'
+
+services:
+  # Main Application Service
+  spin-torque-app:
+    build:
+      context: .
+      dockerfile: Dockerfile.prod
+    image: terragon/spin-torque-rl-gym:1.0
+    container_name: spin-torque-app
+    restart: unless-stopped
+    environment:
+      - SPIN_TORQUE_ENV=production
+      - SPIN_TORQUE_LOG_LEVEL=INFO
+      - SPIN_TORQUE_MAX_WORKERS=8
+      - SPIN_TORQUE_OPTIMIZATION_LEVEL=aggressive
+      - SPIN_TORQUE_ENABLE_VECTORIZATION=true
+      - SPIN_TORQUE_CACHE_SIZE=5000
+      - PYTHONPATH=/app
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./logs:/app/logs
+      - ./data:/app/data
+      - ./config:/app/config
+    networks:
+      - spin-torque-network
+    healthcheck:
+      test: ["CMD", "python", "-c", "import spin_torque_gym; print('OK')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'
+          memory: 8G
+        reservations:
+          cpus: '2.0'
+          memory: 4G
+
+  # Redis Cache Service
+  redis-cache:
+    image: redis:7-alpine
+    container_name: spin-torque-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 1gb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - spin-torque-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # Monitoring Service (Prometheus)
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: spin-torque-prometheus
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    networks:
+      - spin-torque-network
+
+  # Grafana Dashboard
+  grafana:
+    image: grafana/grafana:latest
+    container_name: spin-torque-grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+      - GF_USERS_ALLOW_SIGN_UP=false
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    networks:
+      - spin-torque-network
+
+  # Load Balancer (NGINX)
+  nginx:
+    image: nginx:alpine
+    container_name: spin-torque-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/ssl:/etc/nginx/ssl
+      - ./logs/nginx:/var/log/nginx
+    networks:
+      - spin-torque-network
+    depends_on:
+      - spin-torque-app
+
+  # Database (PostgreSQL for metrics storage)
+  postgres:
+    image: postgres:15-alpine
+    container_name: spin-torque-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=spin_torque_metrics
+      - POSTGRES_USER=spin_torque_user
+      - POSTGRES_PASSWORD=secure_password_123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - spin-torque-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U spin_torque_user -d spin_torque_metrics"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Log Aggregation (Filebeat)
+  filebeat:
+    image: docker.elastic.co/beats/filebeat:8.8.0
+    container_name: spin-torque-filebeat
+    restart: unless-stopped
+    user: root
+    volumes:
+      - ./monitoring/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - ./logs:/logs:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - spin-torque-network
+    depends_on:
+      - spin-torque-app
+
+# Network Configuration
+networks:
+  spin-torque-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+# Volume Configuration
+volumes:
+  redis-data:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local
+  postgres-data:
+    driver: local
+
+# Health Check Configuration
+x-healthcheck-defaults: &healthcheck-defaults
+  interval: 30s
+  timeout: 10s
+  retries: 3
+  start_period: 30s
