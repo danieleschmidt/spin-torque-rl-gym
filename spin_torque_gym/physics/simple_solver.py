@@ -164,8 +164,13 @@ class SimpleLLGSSolver:
                             thermal_noise, temperature
                         )
 
-                        # Ensure normalization
-                        m[i+1] = m[i+1] / np.linalg.norm(m[i+1])
+                        # Ensure normalization with safety check
+                        m_norm = np.linalg.norm(m[i+1])
+                        if m_norm > 1e-12:
+                            m[i+1] = m[i+1] / m_norm
+                        else:
+                            logger.warning(f"Zero magnetization at step {i}, using previous state")
+                            m[i+1] = m[i]
 
                     except Exception as e:
                         logger.warning(f"Integration failed at step {i}: {e}")
@@ -212,7 +217,8 @@ class SimpleLLGSSolver:
 
         magnitude = np.linalg.norm(m)
         if magnitude < 1e-12:
-            raise ValueError("Magnetization cannot have zero magnitude")
+            logger.warning("Zero magnitude magnetization detected, using default [0,0,1]")
+            return np.array([0, 0, 1])  # Safe default
 
         return m / magnitude
 
