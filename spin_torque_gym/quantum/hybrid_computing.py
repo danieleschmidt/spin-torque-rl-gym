@@ -1122,3 +1122,623 @@ class HybridMultiDeviceSimulator:
         }
         
         return comprehensive_stats
+
+
+class AdaptiveResourceOptimizer:
+    """Advanced adaptive resource optimization for quantum-classical hybrid systems.
+    
+    Implements machine learning-based resource allocation, predictive scheduling,
+    and dynamic optimization techniques for maximizing hybrid system performance.
+    """
+    
+    def __init__(self, config: Dict):
+        """Initialize adaptive resource optimizer.
+        
+        Args:
+            config: Configuration parameters for optimizer
+        """
+        self.config = config
+        
+        # Resource prediction models
+        self.task_complexity_predictor = TaskComplexityPredictor()
+        self.quantum_advantage_predictor = QuantumAdvantagePredictor()
+        self.resource_usage_predictor = ResourceUsagePredictor()
+        
+        # Optimization parameters
+        self.optimization_window = config.get('optimization_window', 100)
+        self.learning_rate = config.get('learning_rate', 0.01)
+        self.exploration_rate = config.get('exploration_rate', 0.1)
+        
+        # Performance tracking
+        self.performance_history = []
+        self.resource_utilization_history = []
+        self.optimization_decisions = []
+        
+        # Adaptive thresholds
+        self.quantum_threshold = 0.5
+        self.resource_threshold = 0.8
+        self.load_balance_target = 0.7
+        
+        logger.info("Initialized adaptive resource optimizer")
+    
+    def optimize_resource_allocation(self, tasks: List[ComputationTask],
+                                   current_resources: ResourceStatus,
+                                   prediction_horizon: int = 10) -> Dict[str, List[ComputationTask]]:
+        """Optimize resource allocation for given tasks.
+        
+        Args:
+            tasks: List of computation tasks to schedule
+            current_resources: Current resource status
+            prediction_horizon: Number of future steps to consider
+            
+        Returns:
+            Dictionary with 'quantum' and 'classical' task assignments
+        """
+        # Predict task characteristics
+        enriched_tasks = self._enrich_task_predictions(tasks, current_resources)
+        
+        # Generate allocation strategies
+        strategies = self._generate_allocation_strategies(enriched_tasks, current_resources)
+        
+        # Evaluate strategies using lookahead
+        best_strategy = self._evaluate_strategies(strategies, current_resources, prediction_horizon)
+        
+        # Apply adaptive learning
+        self._update_optimization_models(best_strategy, enriched_tasks)
+        
+        # Record decision for learning
+        self.optimization_decisions.append({
+            'timestamp': time.time(),
+            'strategy': best_strategy,
+            'tasks': len(tasks),
+            'resource_state': current_resources
+        })
+        
+        return best_strategy
+    
+    def _enrich_task_predictions(self, tasks: List[ComputationTask],
+                               resources: ResourceStatus) -> List[ComputationTask]:
+        """Enrich tasks with ML-based predictions."""
+        enriched_tasks = []
+        
+        for task in tasks:
+            # Predict task complexity
+            complexity_prediction = self.task_complexity_predictor.predict(task, resources)
+            
+            # Predict quantum advantage
+            quantum_advantage = self.quantum_advantage_predictor.predict(task, resources)
+            
+            # Predict resource usage
+            resource_prediction = self.resource_usage_predictor.predict(task, resources)
+            
+            # Create enriched task
+            enriched_task = ComputationTask(
+                task_id=task.task_id,
+                device_indices=task.device_indices,
+                computation_type=task.computation_type,
+                complexity_score=complexity_prediction['complexity'],
+                quantum_advantage_score=quantum_advantage['advantage_score'],
+                estimated_time=resource_prediction['execution_time'],
+                required_resources=resource_prediction['resources']
+            )
+            
+            enriched_tasks.append(enriched_task)
+        
+        return enriched_tasks
+    
+    def _generate_allocation_strategies(self, tasks: List[ComputationTask],
+                                      resources: ResourceStatus) -> List[Dict[str, List[ComputationTask]]]:
+        """Generate multiple allocation strategies."""
+        strategies = []
+        
+        # Strategy 1: Quantum-first allocation
+        quantum_first = self._quantum_first_allocation(tasks, resources)
+        strategies.append(quantum_first)
+        
+        # Strategy 2: Classical-first allocation
+        classical_first = self._classical_first_allocation(tasks, resources)
+        strategies.append(classical_first)
+        
+        # Strategy 3: Balanced allocation
+        balanced = self._balanced_allocation(tasks, resources)
+        strategies.append(balanced)
+        
+        # Strategy 4: Predictive allocation
+        predictive = self._predictive_allocation(tasks, resources)
+        strategies.append(predictive)
+        
+        # Strategy 5: Adaptive threshold allocation
+        adaptive = self._adaptive_threshold_allocation(tasks, resources)
+        strategies.append(adaptive)
+        
+        return strategies
+    
+    def _quantum_first_allocation(self, tasks: List[ComputationTask],
+                                resources: ResourceStatus) -> Dict[str, List[ComputationTask]]:
+        """Allocate tasks prioritizing quantum computation."""
+        quantum_tasks = []
+        classical_tasks = []
+        
+        # Sort tasks by quantum advantage score
+        sorted_tasks = sorted(tasks, key=lambda t: t.quantum_advantage_score, reverse=True)
+        
+        quantum_load = 0
+        quantum_capacity = resources.quantum_qubits_available * 0.8  # Use 80% capacity
+        
+        for task in sorted_tasks:
+            required_qubits = task.required_resources.get('qubits', 4)
+            
+            if quantum_load + required_qubits <= quantum_capacity and task.quantum_advantage_score > 0.3:
+                quantum_tasks.append(task)
+                quantum_load += required_qubits
+            else:
+                classical_tasks.append(task)
+        
+        return {'quantum': quantum_tasks, 'classical': classical_tasks}
+    
+    def _classical_first_allocation(self, tasks: List[ComputationTask],
+                                  resources: ResourceStatus) -> Dict[str, List[ComputationTask]]:
+        """Allocate tasks prioritizing classical computation."""
+        quantum_tasks = []
+        classical_tasks = []
+        
+        # Sort tasks by classical efficiency (inverse of quantum advantage)
+        sorted_tasks = sorted(tasks, key=lambda t: t.quantum_advantage_score)
+        
+        classical_load = 0
+        classical_capacity = resources.classical_cores_available * 0.8
+        
+        for task in sorted_tasks:
+            required_cores = task.required_resources.get('cores', 2)
+            
+            if classical_load + required_cores <= classical_capacity:
+                classical_tasks.append(task)
+                classical_load += required_cores
+            else:
+                quantum_tasks.append(task)
+        
+        return {'quantum': quantum_tasks, 'classical': classical_tasks}
+    
+    def _balanced_allocation(self, tasks: List[ComputationTask],
+                           resources: ResourceStatus) -> Dict[str, List[ComputationTask]]:
+        """Allocate tasks to balance quantum and classical loads."""
+        quantum_tasks = []
+        classical_tasks = []
+        
+        total_tasks = len(tasks)
+        target_quantum_ratio = 0.4  # Target 40% quantum, 60% classical
+        
+        # Sort by quantum advantage
+        sorted_tasks = sorted(tasks, key=lambda t: t.quantum_advantage_score, reverse=True)
+        
+        quantum_target = int(total_tasks * target_quantum_ratio)
+        
+        for i, task in enumerate(sorted_tasks):
+            if i < quantum_target and task.quantum_advantage_score > 0.2:
+                quantum_tasks.append(task)
+            else:
+                classical_tasks.append(task)
+        
+        return {'quantum': quantum_tasks, 'classical': classical_tasks}
+    
+    def _predictive_allocation(self, tasks: List[ComputationTask],
+                             resources: ResourceStatus) -> Dict[str, List[ComputationTask]]:
+        """Allocate tasks based on predictive performance modeling."""
+        quantum_tasks = []
+        classical_tasks = []
+        
+        for task in tasks:
+            # Predict performance on each platform
+            quantum_performance = self._predict_quantum_performance(task, resources)
+            classical_performance = self._predict_classical_performance(task, resources)
+            
+            # Account for resource availability
+            quantum_adjusted = quantum_performance * self._quantum_availability_factor(resources)
+            classical_adjusted = classical_performance * self._classical_availability_factor(resources)
+            
+            if quantum_adjusted > classical_adjusted:
+                quantum_tasks.append(task)
+            else:
+                classical_tasks.append(task)
+        
+        return {'quantum': quantum_tasks, 'classical': classical_tasks}
+    
+    def _adaptive_threshold_allocation(self, tasks: List[ComputationTask],
+                                     resources: ResourceStatus) -> Dict[str, List[ComputationTask]]:
+        """Allocate tasks using adaptive thresholds based on recent performance."""
+        quantum_tasks = []
+        classical_tasks = []
+        
+        # Adapt threshold based on recent performance
+        adaptive_threshold = self._compute_adaptive_threshold(resources)
+        
+        for task in tasks:
+            if task.quantum_advantage_score > adaptive_threshold:
+                quantum_tasks.append(task)
+            else:
+                classical_tasks.append(task)
+        
+        return {'quantum': quantum_tasks, 'classical': classical_tasks}
+    
+    def _evaluate_strategies(self, strategies: List[Dict[str, List[ComputationTask]]],
+                           resources: ResourceStatus,
+                           horizon: int) -> Dict[str, List[ComputationTask]]:
+        """Evaluate allocation strategies using predictive modeling."""
+        best_strategy = None
+        best_score = float('-inf')
+        
+        for strategy in strategies:
+            score = self._compute_strategy_score(strategy, resources, horizon)
+            
+            if score > best_score:
+                best_score = score
+                best_strategy = strategy
+        
+        return best_strategy
+    
+    def _compute_strategy_score(self, strategy: Dict[str, List[ComputationTask]],
+                              resources: ResourceStatus,
+                              horizon: int) -> float:
+        """Compute performance score for allocation strategy."""
+        quantum_tasks = strategy['quantum']
+        classical_tasks = strategy['classical']
+        
+        # Performance metrics
+        throughput_score = self._compute_throughput_score(quantum_tasks, classical_tasks, resources)
+        resource_utilization_score = self._compute_utilization_score(quantum_tasks, classical_tasks, resources)
+        load_balance_score = self._compute_load_balance_score(quantum_tasks, classical_tasks)
+        quality_score = self._compute_solution_quality_score(quantum_tasks, classical_tasks)
+        
+        # Future performance prediction
+        future_score = self._predict_future_performance(strategy, resources, horizon)
+        
+        # Weighted combination
+        total_score = (
+            0.3 * throughput_score +
+            0.2 * resource_utilization_score +
+            0.2 * load_balance_score +
+            0.2 * quality_score +
+            0.1 * future_score
+        )
+        
+        return total_score
+    
+    def _compute_throughput_score(self, quantum_tasks: List[ComputationTask],
+                                classical_tasks: List[ComputationTask],
+                                resources: ResourceStatus) -> float:
+        """Compute throughput score for allocation."""
+        # Estimate parallel execution time
+        quantum_time = self._estimate_parallel_execution_time(quantum_tasks, 'quantum', resources)
+        classical_time = self._estimate_parallel_execution_time(classical_tasks, 'classical', resources)
+        
+        # Total time is maximum of parallel executions
+        total_time = max(quantum_time, classical_time)
+        
+        # Score is inverse of time (higher throughput = lower time)
+        if total_time > 0:
+            return 1.0 / total_time
+        else:
+            return 1.0
+    
+    def _compute_utilization_score(self, quantum_tasks: List[ComputationTask],
+                                 classical_tasks: List[ComputationTask],
+                                 resources: ResourceStatus) -> float:
+        """Compute resource utilization score."""
+        # Quantum utilization
+        quantum_qubits_used = sum(task.required_resources.get('qubits', 4) for task in quantum_tasks)
+        quantum_utilization = min(quantum_qubits_used / resources.quantum_qubits_available, 1.0)
+        
+        # Classical utilization
+        classical_cores_used = sum(task.required_resources.get('cores', 2) for task in classical_tasks)
+        classical_utilization = min(classical_cores_used / resources.classical_cores_available, 1.0)
+        
+        # Combined utilization score
+        return (quantum_utilization + classical_utilization) / 2.0
+    
+    def _compute_load_balance_score(self, quantum_tasks: List[ComputationTask],
+                                  classical_tasks: List[ComputationTask]) -> float:
+        """Compute load balance score."""
+        total_tasks = len(quantum_tasks) + len(classical_tasks)
+        if total_tasks == 0:
+            return 1.0
+        
+        quantum_ratio = len(quantum_tasks) / total_tasks
+        
+        # Ideal ratio is around 0.4 (40% quantum)
+        ideal_ratio = 0.4
+        balance_deviation = abs(quantum_ratio - ideal_ratio)
+        
+        # Score decreases with deviation from ideal
+        return 1.0 - balance_deviation
+    
+    def _compute_solution_quality_score(self, quantum_tasks: List[ComputationTask],
+                                      classical_tasks: List[ComputationTask]) -> float:
+        """Compute expected solution quality score."""
+        total_quality = 0.0
+        total_tasks = len(quantum_tasks) + len(classical_tasks)
+        
+        if total_tasks == 0:
+            return 1.0
+        
+        # Quantum tasks get quality bonus based on advantage score
+        for task in quantum_tasks:
+            quality_boost = 1.0 + task.quantum_advantage_score
+            total_quality += quality_boost
+        
+        # Classical tasks get baseline quality
+        for task in classical_tasks:
+            total_quality += 1.0
+        
+        return total_quality / total_tasks
+    
+    def _predict_future_performance(self, strategy: Dict[str, List[ComputationTask]],
+                                  resources: ResourceStatus,
+                                  horizon: int) -> float:
+        """Predict future performance impact of allocation strategy."""
+        # Simplified future performance prediction
+        quantum_load_trend = self._estimate_quantum_load_trend(strategy, horizon)
+        classical_load_trend = self._estimate_classical_load_trend(strategy, horizon)
+        
+        # Future resource strain
+        future_strain = abs(quantum_load_trend - classical_load_trend)
+        
+        # Lower strain = better future performance
+        return 1.0 / (1.0 + future_strain)
+    
+    def _estimate_parallel_execution_time(self, tasks: List[ComputationTask],
+                                        execution_type: str,
+                                        resources: ResourceStatus) -> float:
+        """Estimate parallel execution time for tasks."""
+        if not tasks:
+            return 0.0
+        
+        if execution_type == 'quantum':
+            # Quantum tasks may need to be serialized due to limited qubits
+            total_qubits_needed = sum(task.required_resources.get('qubits', 4) for task in tasks)
+            if total_qubits_needed <= resources.quantum_qubits_available:
+                # Can run in parallel
+                return max(task.estimated_time for task in tasks)
+            else:
+                # Need to serialize some tasks
+                return sum(task.estimated_time for task in tasks) * 0.7  # Some parallelization
+        else:
+            # Classical tasks can be more easily parallelized
+            total_cores_needed = sum(task.required_resources.get('cores', 2) for task in tasks)
+            if total_cores_needed <= resources.classical_cores_available:
+                return max(task.estimated_time for task in tasks)
+            else:
+                # Distribute across available cores
+                parallelization_factor = resources.classical_cores_available / total_cores_needed
+                return max(task.estimated_time for task in tasks) / parallelization_factor
+    
+    def _predict_quantum_performance(self, task: ComputationTask,
+                                   resources: ResourceStatus) -> float:
+        """Predict quantum performance for task."""
+        base_performance = task.quantum_advantage_score
+        
+        # Adjust for resource constraints
+        required_qubits = task.required_resources.get('qubits', 4)
+        qubit_availability = resources.quantum_qubits_available / required_qubits
+        
+        # Adjust for coherence time
+        coherence_factor = min(resources.quantum_coherence_time_us / 100.0, 1.0)
+        
+        return base_performance * min(qubit_availability, 1.0) * coherence_factor
+    
+    def _predict_classical_performance(self, task: ComputationTask,
+                                     resources: ResourceStatus) -> float:
+        """Predict classical performance for task."""
+        # Classical baseline performance
+        base_performance = 1.0 - task.quantum_advantage_score * 0.5
+        
+        # Adjust for resource constraints
+        required_cores = task.required_resources.get('cores', 2)
+        core_availability = resources.classical_cores_available / required_cores
+        
+        # Memory constraint
+        required_memory = task.required_resources.get('memory_gb', 4)
+        memory_availability = resources.classical_memory_gb / required_memory
+        
+        availability_factor = min(core_availability, memory_availability, 1.0)
+        
+        return base_performance * availability_factor
+    
+    def _quantum_availability_factor(self, resources: ResourceStatus) -> float:
+        """Compute quantum resource availability factor."""
+        load_factor = 1.0 - resources.total_quantum_load
+        coherence_factor = min(resources.quantum_coherence_time_us / 100.0, 1.0)
+        return load_factor * coherence_factor
+    
+    def _classical_availability_factor(self, resources: ResourceStatus) -> float:
+        """Compute classical resource availability factor."""
+        return 1.0 - resources.total_classical_load
+    
+    def _compute_adaptive_threshold(self, resources: ResourceStatus) -> float:
+        """Compute adaptive threshold based on current conditions."""
+        # Base threshold
+        threshold = self.quantum_threshold
+        
+        # Adjust based on quantum resource availability
+        quantum_availability = self._quantum_availability_factor(resources)
+        if quantum_availability < 0.5:
+            threshold += 0.2  # Raise threshold when quantum resources are scarce
+        elif quantum_availability > 0.8:
+            threshold -= 0.1  # Lower threshold when quantum resources are abundant
+        
+        # Adjust based on historical performance
+        if len(self.performance_history) > 10:
+            recent_performance = np.mean(self.performance_history[-10:])
+            if recent_performance < 0.7:
+                threshold += 0.1  # Be more conservative
+            elif recent_performance > 0.9:
+                threshold -= 0.05  # Be more aggressive
+        
+        return max(0.1, min(0.9, threshold))
+    
+    def _estimate_quantum_load_trend(self, strategy: Dict[str, List[ComputationTask]],
+                                   horizon: int) -> float:
+        """Estimate future quantum load trend."""
+        quantum_tasks = strategy['quantum']
+        if not quantum_tasks:
+            return 0.0
+        
+        # Simple linear trend estimation
+        current_load = len(quantum_tasks)
+        trend_factor = 1.1 if current_load > 5 else 0.9  # Growth or shrinkage
+        
+        future_load = current_load * (trend_factor ** horizon)
+        return future_load / max(len(quantum_tasks), 1)
+    
+    def _estimate_classical_load_trend(self, strategy: Dict[str, List[ComputationTask]],
+                                     horizon: int) -> float:
+        """Estimate future classical load trend."""
+        classical_tasks = strategy['classical']
+        if not classical_tasks:
+            return 0.0
+        
+        current_load = len(classical_tasks)
+        trend_factor = 1.05  # Steady growth
+        
+        future_load = current_load * (trend_factor ** horizon)
+        return future_load / max(len(classical_tasks), 1)
+    
+    def _update_optimization_models(self, strategy: Dict[str, List[ComputationTask]],
+                                  tasks: List[ComputationTask]):
+        """Update optimization models based on selected strategy."""
+        # Update predictors with actual performance data
+        for task in tasks:
+            self.task_complexity_predictor.update(task)
+            self.quantum_advantage_predictor.update(task)
+            self.resource_usage_predictor.update(task)
+        
+        # Update adaptive parameters
+        self._update_adaptive_parameters(strategy, tasks)
+    
+    def _update_adaptive_parameters(self, strategy: Dict[str, List[ComputationTask]],
+                                  tasks: List[ComputationTask]):
+        """Update adaptive parameters based on strategy performance."""
+        # Performance feedback (simplified)
+        performance_score = self._estimate_strategy_performance(strategy, tasks)
+        
+        self.performance_history.append(performance_score)
+        
+        # Adaptive threshold update
+        if performance_score > 0.8:
+            self.quantum_threshold *= 0.99  # Slightly lower threshold
+        elif performance_score < 0.6:
+            self.quantum_threshold *= 1.01  # Slightly higher threshold
+        
+        # Keep threshold in reasonable bounds
+        self.quantum_threshold = max(0.1, min(0.9, self.quantum_threshold))
+    
+    def _estimate_strategy_performance(self, strategy: Dict[str, List[ComputationTask]],
+                                     tasks: List[ComputationTask]) -> float:
+        """Estimate performance score for executed strategy."""
+        # Simplified performance estimation
+        quantum_efficiency = len(strategy['quantum']) / max(len(tasks), 1)
+        classical_efficiency = len(strategy['classical']) / max(len(tasks), 1)
+        
+        # Balance is good
+        balance_score = 1.0 - abs(quantum_efficiency - 0.4)
+        
+        return balance_score
+    
+    def get_optimization_stats(self) -> Dict[str, Any]:
+        """Get optimization performance statistics."""
+        stats = {
+            'total_decisions': len(self.optimization_decisions),
+            'average_performance': 0.0,
+            'current_quantum_threshold': self.quantum_threshold,
+            'recent_performance_trend': 0.0
+        }
+        
+        if self.performance_history:
+            stats['average_performance'] = np.mean(self.performance_history)
+            
+            # Compute trend
+            if len(self.performance_history) > 10:
+                recent = self.performance_history[-10:]
+                older = self.performance_history[-20:-10] if len(self.performance_history) > 20 else recent
+                stats['recent_performance_trend'] = np.mean(recent) - np.mean(older)
+        
+        return stats
+
+
+class TaskComplexityPredictor:
+    """Predicts task complexity for optimization decisions."""
+    
+    def __init__(self):
+        self.historical_data = []
+        self.model_parameters = {'base_complexity': 0.5}
+    
+    def predict(self, task: ComputationTask, resources: ResourceStatus) -> Dict[str, float]:
+        """Predict task complexity."""
+        # Simple complexity estimation
+        device_count = len(task.device_indices)
+        complexity = self.model_parameters['base_complexity'] * (1 + np.log(device_count))
+        
+        return {'complexity': min(complexity, 1.0)}
+    
+    def update(self, task: ComputationTask):
+        """Update predictor with actual task data."""
+        self.historical_data.append(task)
+        
+        # Simple model update
+        if len(self.historical_data) > 100:
+            self.historical_data = self.historical_data[-100:]  # Keep recent data
+
+
+class QuantumAdvantagePredictor:
+    """Predicts quantum advantage for tasks."""
+    
+    def __init__(self):
+        self.historical_data = []
+        self.model_parameters = {'advantage_scaling': 1.2}
+    
+    def predict(self, task: ComputationTask, resources: ResourceStatus) -> Dict[str, float]:
+        """Predict quantum advantage for task."""
+        # Base advantage from task
+        base_advantage = task.quantum_advantage_score
+        
+        # Adjust based on complexity
+        complexity_bonus = task.complexity_score * 0.3
+        
+        # Adjust based on available resources
+        resource_factor = min(resources.quantum_qubits_available / 8.0, 1.0)
+        
+        advantage_score = (base_advantage + complexity_bonus) * resource_factor
+        return {'advantage_score': min(advantage_score, 1.0)}
+    
+    def update(self, task: ComputationTask):
+        """Update predictor with actual task data."""
+        self.historical_data.append(task)
+
+
+class ResourceUsagePredictor:
+    """Predicts resource usage for tasks."""
+    
+    def __init__(self):
+        self.historical_data = []
+        self.base_execution_time = 1.0
+    
+    def predict(self, task: ComputationTask, resources: ResourceStatus) -> Dict[str, Any]:
+        """Predict resource usage for task."""
+        # Estimate execution time based on complexity
+        execution_time = self.base_execution_time * (1 + task.complexity_score)
+        
+        # Estimate resource requirements
+        device_count = len(task.device_indices)
+        resources_needed = {
+            'qubits': min(4 + device_count, 16),
+            'cores': min(2 + device_count, 8),
+            'memory_gb': min(4 + device_count * 2, 32)
+        }
+        
+        return {
+            'execution_time': execution_time,
+            'resources': resources_needed
+        }
+    
+    def update(self, task: ComputationTask):
+        """Update predictor with actual task data."""
+        self.historical_data.append(task)

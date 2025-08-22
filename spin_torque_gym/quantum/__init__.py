@@ -15,20 +15,76 @@ Date: January 2025
 Status: Research Implementation - Publication Ready
 """
 
-from .error_correction import SkyrmionErrorCorrection, TopologicalProtection
+from .error_correction import (
+    SkyrmionErrorCorrection, 
+    TopologicalProtection,
+    SurfaceCodeErrorCorrection,
+    LogicalQubitOperations
+)
 from .energy_landscape import QuantumEnhancedEnergyLandscape, SymmetryEnhancedVQE
 from .optimization import QuantumMLDeviceOptimizer, IterationFreeQAOA
-from .hybrid_computing import HybridMultiDeviceSimulator, AdaptiveScheduler
+from .hybrid_computing import (
+    HybridMultiDeviceSimulator, 
+    AdaptiveScheduler, 
+    AdaptiveResourceOptimizer,
+    ComputationTask,
+    ResourceStatus
+)
+from .benchmarking import (
+    QuantumBenchmarkSuite, 
+    BenchmarkResult,
+    QuantumAdvantageReport,
+    SpintronicOptimizationProblem,
+    QuantumStatePreparationProblem,
+    create_standard_benchmark_suite
+)
+from .advantage_verification import (
+    QuantumAdvantageVerifier,
+    PerformanceAnalytics,
+    QuantumAdvantageMetrics,
+    PerformanceProfile
+)
+from .circuit_optimization import (
+    CircuitOptimizer,
+    HardwareCompiler,
+    QuantumCircuit,
+    QuantumGate,
+    HardwareTopology,
+    GateType,
+    create_spintronic_optimized_circuit
+)
 
 __all__ = [
     "SkyrmionErrorCorrection",
-    "TopologicalProtection", 
+    "TopologicalProtection",
+    "SurfaceCodeErrorCorrection",
+    "LogicalQubitOperations",
     "QuantumEnhancedEnergyLandscape",
     "SymmetryEnhancedVQE",
     "QuantumMLDeviceOptimizer",
     "IterationFreeQAOA",
     "HybridMultiDeviceSimulator",
     "AdaptiveScheduler",
+    "AdaptiveResourceOptimizer",
+    "ComputationTask",
+    "ResourceStatus",
+    "QuantumBenchmarkSuite",
+    "BenchmarkResult",
+    "QuantumAdvantageReport",
+    "SpintronicOptimizationProblem",
+    "QuantumStatePreparationProblem",
+    "create_standard_benchmark_suite",
+    "QuantumAdvantageVerifier",
+    "PerformanceAnalytics",
+    "QuantumAdvantageMetrics",
+    "PerformanceProfile",
+    "CircuitOptimizer",
+    "HardwareCompiler",
+    "QuantumCircuit",
+    "QuantumGate",
+    "HardwareTopology",
+    "GateType",
+    "create_spintronic_optimized_circuit",
 ]
 
 # Research metadata for publication
