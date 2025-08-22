@@ -20,6 +20,9 @@ except ImportError:
 from ..physics import LLGSSolver
 from ..devices import BaseDevice
 from ..utils.performance import PerformanceProfiler
+from ..utils.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class QuantumSpinOptimizer:
@@ -390,6 +393,244 @@ class QuantumSpinOptimizer:
                 success_probability += np.abs(amplitude)**2
         
         return success_probability
+
+
+class QuantumNeuralNetwork:
+    """Quantum Neural Network for spintronic pattern recognition and optimization.
+    
+    Implements parameterized quantum circuits as neural network layers,
+    providing quantum advantage for high-dimensional spintronic state classification
+    and optimization tasks with exponential speedup potential.
+    """
+    
+    def __init__(self, num_qubits: int, num_layers: int = 4, ansatz_type: str = "strongly_entangling"):
+        """Initialize quantum neural network.
+        
+        Args:
+            num_qubits: Number of qubits in the quantum circuit
+            num_layers: Number of parameterized layers
+            ansatz_type: Type of variational ansatz to use
+        """
+        self.num_qubits = num_qubits
+        self.num_layers = num_layers
+        self.ansatz_type = ansatz_type
+        
+        # Calculate parameter count
+        if ansatz_type == "strongly_entangling":
+            self.num_params = num_layers * num_qubits * 3  # 3 rotations per qubit per layer
+        elif ansatz_type == "hardware_efficient":
+            self.num_params = num_layers * num_qubits * 2  # 2 rotations per qubit per layer
+        else:
+            self.num_params = num_layers * num_qubits * 3
+        
+        # Initialize parameters
+        self.parameters = np.random.uniform(0, 2*np.pi, self.num_params)
+        
+        # Performance metrics
+        self.training_history = {
+            'loss': [],
+            'accuracy': [],
+            'quantum_fidelity': [],
+            'gradient_norms': []
+        }
+        
+        logger.info(f"Initialized QNN: {num_qubits} qubits, {num_layers} layers, {self.num_params} parameters")
+    
+    def create_feature_map(self, classical_data: np.ndarray) -> np.ndarray:
+        """Create quantum feature map from classical data."""
+        # Initialize quantum state in superposition
+        state = np.zeros(2**self.num_qubits, dtype=complex)
+        state[0] = 1.0  # Start in |0...0⟩
+        
+        # Apply Hadamard gates for superposition
+        for qubit in range(self.num_qubits):
+            state = self._apply_hadamard(state, qubit)
+        
+        # Encode classical data through rotation angles
+        for i, data_point in enumerate(classical_data[:self.num_qubits]):
+            # Z-rotation encoding
+            angle = np.pi * data_point  # Scale to [0, π]
+            state = self._apply_rz(state, angle, i)
+        
+        return state
+    
+    def forward(self, classical_input: np.ndarray) -> np.ndarray:
+        """Forward pass through quantum neural network."""
+        # Create quantum feature map
+        state = self.create_feature_map(classical_input)
+        
+        # Apply variational layers
+        param_idx = 0
+        for layer in range(self.num_layers):
+            if self.ansatz_type == "strongly_entangling":
+                layer_param_count = self.num_qubits * 3
+            else:
+                layer_param_count = self.num_qubits * 2
+            
+            layer_params = self.parameters[param_idx:param_idx + layer_param_count]
+            state = self._apply_variational_layer(state, layer_params)
+            param_idx += layer_param_count
+        
+        # Measurement in computational basis
+        probabilities = np.abs(state)**2
+        
+        # Extract classical features from quantum measurements
+        classical_output = self._extract_classical_features(probabilities)
+        
+        return classical_output
+    
+    def _apply_variational_layer(self, state: np.ndarray, layer_params: np.ndarray) -> np.ndarray:
+        """Apply parameterized variational layer."""
+        if self.ansatz_type == "strongly_entangling":
+            return self._strongly_entangling_layer(state, layer_params)
+        else:
+            return self._hardware_efficient_layer(state, layer_params)
+    
+    def _strongly_entangling_layer(self, state: np.ndarray, params: np.ndarray) -> np.ndarray:
+        """Apply strongly entangling ansatz layer."""
+        current_state = state.copy()
+        
+        # Apply single-qubit rotations
+        for qubit in range(self.num_qubits):
+            # RX, RY, RZ rotations
+            rx_angle = params[qubit * 3]
+            ry_angle = params[qubit * 3 + 1]
+            rz_angle = params[qubit * 3 + 2]
+            
+            current_state = self._apply_rx(current_state, rx_angle, qubit)
+            current_state = self._apply_ry(current_state, ry_angle, qubit)
+            current_state = self._apply_rz(current_state, rz_angle, qubit)
+        
+        # Apply entangling gates (CNOT ladder)
+        for qubit in range(self.num_qubits - 1):
+            current_state = self._apply_cnot(current_state, qubit, qubit + 1)
+        
+        return current_state
+    
+    def _hardware_efficient_layer(self, state: np.ndarray, params: np.ndarray) -> np.ndarray:
+        """Apply hardware-efficient ansatz layer."""
+        current_state = state.copy()
+        
+        # Apply RY and RZ rotations
+        for qubit in range(self.num_qubits):
+            ry_angle = params[qubit * 2]
+            rz_angle = params[qubit * 2 + 1]
+            
+            current_state = self._apply_ry(current_state, ry_angle, qubit)
+            current_state = self._apply_rz(current_state, rz_angle, qubit)
+        
+        # Linear entanglement
+        for qubit in range(0, self.num_qubits - 1, 2):
+            current_state = self._apply_cnot(current_state, qubit, qubit + 1)
+        
+        return current_state
+    
+    def _extract_classical_features(self, probabilities: np.ndarray) -> np.ndarray:
+        """Extract classical features from quantum measurement probabilities."""
+        features = []
+        
+        # Marginal probabilities for each qubit
+        for qubit in range(self.num_qubits):
+            prob_0 = sum(prob for i, prob in enumerate(probabilities) if not (i >> qubit) & 1)
+            features.append(prob_0)
+        
+        # Global measures
+        features.append(np.sum(probabilities * np.arange(len(probabilities))))  # Expectation value
+        features.append(-np.sum(probabilities * np.log(probabilities + 1e-10)))  # Entropy
+        
+        return np.array(features)
+    
+    # Quantum gate implementations (simplified)
+    def _apply_hadamard(self, state: np.ndarray, qubit: int) -> np.ndarray:
+        """Apply Hadamard gate to specified qubit."""
+        new_state = state.copy()
+        for i in range(len(state)):
+            if (i >> qubit) & 1:  # Qubit is |1⟩
+                partner = i ^ (1 << qubit)
+                new_state[i] = (state[i] - state[partner]) / np.sqrt(2)
+            else:  # Qubit is |0⟩
+                partner = i ^ (1 << qubit)
+                new_state[i] = (state[i] + state[partner]) / np.sqrt(2)
+        return new_state
+    
+    def _apply_rx(self, state: np.ndarray, angle: float, qubit: int) -> np.ndarray:
+        """Apply RX rotation gate."""
+        cos_half = np.cos(angle / 2)
+        sin_half = -1j * np.sin(angle / 2)
+        
+        new_state = state.copy()
+        for i in range(len(state)):
+            partner = i ^ (1 << qubit)
+            if (i >> qubit) & 1:
+                new_state[i] = cos_half * state[i] + sin_half * state[partner]
+            else:
+                new_state[i] = cos_half * state[i] + sin_half * state[partner]
+        return new_state
+    
+    def _apply_ry(self, state: np.ndarray, angle: float, qubit: int) -> np.ndarray:
+        """Apply RY rotation gate."""
+        cos_half = np.cos(angle / 2)
+        sin_half = np.sin(angle / 2)
+        
+        new_state = state.copy()
+        for i in range(len(state)):
+            partner = i ^ (1 << qubit)
+            if (i >> qubit) & 1:
+                new_state[i] = cos_half * state[i] - sin_half * state[partner]
+            else:
+                new_state[i] = cos_half * state[i] + sin_half * state[partner]
+        return new_state
+    
+    def _apply_rz(self, state: np.ndarray, angle: float, qubit: int) -> np.ndarray:
+        """Apply RZ rotation gate."""
+        new_state = state.copy()
+        for i in range(len(state)):
+            if (i >> qubit) & 1:
+                new_state[i] *= np.exp(1j * angle / 2)
+            else:
+                new_state[i] *= np.exp(-1j * angle / 2)
+        return new_state
+    
+    def _apply_cnot(self, state: np.ndarray, control: int, target: int) -> np.ndarray:
+        """Apply CNOT gate."""
+        new_state = state.copy()
+        for i in range(len(state)):
+            if (i >> control) & 1:  # Control is |1⟩
+                partner = i ^ (1 << target)
+                new_state[i] = state[partner]
+        return new_state
+
+
+class VariationalQuantumClassifier:
+    """Variational Quantum Classifier for spintronic state classification."""
+    
+    def __init__(self, num_qubits: int, num_classes: int, num_layers: int = 3):
+        """Initialize variational quantum classifier."""
+        self.num_qubits = num_qubits
+        self.num_classes = num_classes
+        self.num_layers = num_layers
+        
+        # Initialize quantum neural network
+        self.qnn = QuantumNeuralNetwork(num_qubits, num_layers, "hardware_efficient")
+        
+        # Classification parameters
+        self.classification_weights = np.random.normal(0, 0.1, (num_classes, self.qnn.num_qubits + 2))
+        
+        logger.info(f"Initialized VQC: {num_qubits} qubits, {num_classes} classes")
+    
+    def classify(self, input_data: np.ndarray) -> np.ndarray:
+        """Classify input using variational quantum circuit."""
+        # Get quantum features
+        quantum_features = self.qnn.forward(input_data)
+        
+        # Linear classification layer
+        class_scores = np.dot(self.classification_weights, quantum_features)
+        
+        # Softmax activation
+        exp_scores = np.exp(class_scores - np.max(class_scores))
+        probabilities = exp_scores / np.sum(exp_scores)
+        
+        return probabilities
 
 
 class QuantumReinforcementLearning:
