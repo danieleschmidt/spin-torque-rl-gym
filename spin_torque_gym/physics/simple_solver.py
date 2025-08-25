@@ -165,12 +165,7 @@ class SimpleLLGSSolver:
                         )
 
                         # Ensure normalization with safety check
-                        m_norm = np.linalg.norm(m[i+1])
-                        if m_norm > 1e-12:
-                            m[i+1] = m[i+1] / m_norm
-                        else:
-                            logger.warning(f"Zero magnetization at step {i}, using previous state")
-                            m[i+1] = m[i]
+                        m[i+1] = self._validate_magnetization(m[i+1])
 
                     except Exception as e:
                         logger.warning(f"Integration failed at step {i}: {e}")
@@ -215,12 +210,23 @@ class SimpleLLGSSolver:
         if not isinstance(m, np.ndarray) or m.shape != (3,):
             raise ValueError("Magnetization must be a 3D numpy array")
 
+        # Handle potential NaN or inf values
+        if not np.isfinite(m).all():
+            logger.warning("Non-finite magnetization detected, using default [0,0,1]")
+            return np.array([0.0, 0.0, 1.0])
+
         magnitude = np.linalg.norm(m)
         if magnitude < 1e-12:
             logger.warning("Zero magnitude magnetization detected, using default [0,0,1]")
-            return np.array([0, 0, 1])  # Safe default
+            return np.array([0.0, 0.0, 1.0])  # Safe default
 
-        return m / magnitude
+        # Normalize with stability check
+        normalized = m / magnitude
+        if not np.isfinite(normalized).all():
+            logger.warning("Normalization failed, using default [0,0,1]")
+            return np.array([0.0, 0.0, 1.0])
+
+        return normalized
 
     def _create_trivial_solution(self, m_initial: np.ndarray, t_start: float, t_end: float) -> Dict[str, Any]:
         """Create trivial solution for edge cases."""

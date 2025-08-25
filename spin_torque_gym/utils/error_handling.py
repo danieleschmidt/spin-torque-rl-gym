@@ -1,14 +1,16 @@
-"""Comprehensive error handling utilities for Spin Torque RL-Gym.
+"""Comprehensive error handling for SpinTorque Gym.
 
-This module provides robust error handling, validation, and recovery mechanisms
-for scientific computing applications.
+This module provides robust error handling, retry mechanisms,
+circuit breakers, and graceful degradation for production use.
 """
 
 import functools
+import time
+from typing import Any, Callable, Dict, List, Optional, Type, TypeVar, Union
 import logging
-import sys
-import traceback
-from typing import Any, Callable, Dict, Optional, TypeVar, Union
+from threading import Lock
+
+import numpy as np
 
 # Type variable for decorated functions
 F = TypeVar('F', bound=Callable[..., Any])
@@ -59,7 +61,7 @@ def robust_computation(
     fallback_value: Optional[Any] = None,
     exceptions: tuple = (Exception,),
     backoff_factor: float = 1.0
-) -> Callable[[F], F]:
+):
     """Decorator for robust scientific computations with retry logic.
     
     Args:
@@ -71,7 +73,7 @@ def robust_computation(
     Returns:
         Decorated function with retry logic
     """
-    def decorator(func: F) -> F:
+    def decorator(func):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             last_exception = None
@@ -143,7 +145,7 @@ def _contains_invalid_values(obj: Any) -> bool:
         return False
 
 
-def validate_parameters(param_spec: Dict[str, Dict[str, Any]]) -> Callable[[F], F]:
+def validate_parameters(param_spec: Dict[str, Dict[str, Any]]):
     """Decorator for comprehensive parameter validation.
     
     Args:
@@ -153,7 +155,7 @@ def validate_parameters(param_spec: Dict[str, Dict[str, Any]]) -> Callable[[F], 
     Returns:
         Decorated function with parameter validation
     """
-    def decorator(func: F) -> F:
+    def decorator(func):
         @functools.wraps(func)
         def wrapper(*args, **kwargs):
             # Get function signature
