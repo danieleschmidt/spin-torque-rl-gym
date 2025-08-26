@@ -9,7 +9,7 @@ import numpy as np
 
 from .error_handling import EnvironmentError, safe_execute
 from .monitoring import HealthMonitor, MetricsCollector
-from .security_validation import SecurityValidator
+from .security_validation import SecurityAuditor as SecurityValidator
 from .validation import validate_action, validate_observation
 
 logger = logging.getLogger(__name__)

@@ -525,3 +525,7 @@ def get_cache_manager() -> CacheManager:
     if _cache_manager is None:
         _cache_manager = CacheManager()
     return _cache_manager
+# Factory function for backward compatibility
+def adaptive_cache(max_size: int = 1000):
+    """Create an adaptive cache instance."""
+    return AdaptiveCache(max_size=max_size)
