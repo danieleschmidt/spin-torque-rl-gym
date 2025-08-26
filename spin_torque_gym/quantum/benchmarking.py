@@ -84,7 +84,7 @@ class BenchmarkProblem(ABC):
     def _generate_problem_id(self) -> str:
         """Generate unique problem identifier."""
         content = f"{self.__class__.__name__}_{self.problem_size}_{self.difficulty}"
-        return hashlib.md5(content.encode()).hexdigest()[:8]
+        return hashlib.md5(content.encode(), usedforsecurity=False).hexdigest()[:8]
     
     @abstractmethod
     def generate_instance(self) -> Dict[str, Any]:

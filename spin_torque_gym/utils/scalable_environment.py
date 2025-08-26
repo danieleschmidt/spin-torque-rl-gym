@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Tuple, Union
 import gymnasium as gym
 import numpy as np
 
-from .cache import adaptive_cache
+from .cache_factory import adaptive_cache
 from .monitoring import MetricsCollector, PerformanceProfiler
 from .performance_optimization import EnvironmentPool, VectorizedEnvironment
 from .scaling import AutoScaler, LoadBalancer, ResourceOptimizer

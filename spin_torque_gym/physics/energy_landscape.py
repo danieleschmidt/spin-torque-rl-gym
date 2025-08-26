@@ -165,7 +165,8 @@ class EnergyLandscape:
                     if is_new:
                         stable_states.append(m_stable)
 
-            except Exception:
+            except (ValueError, RuntimeError) as e:
+                logger.warning(f"Skipping unstable point: {e}")
                 continue
 
         # Sort by energy

@@ -7,7 +7,8 @@ from typing import Any, Dict, List, Tuple
 
 import numpy as np
 
-from .cache import LRUCache, adaptive_cache
+from .cache import LRUCache
+from .cache_factory import adaptive_cache
 from .concurrency import ThreadPoolManager, process_batch_concurrent
 from .performance_optimization import (
     OptimizedComputation,
